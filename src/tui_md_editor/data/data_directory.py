@@ -1,0 +1,22 @@
+"""Provides a function for working out the data directory location."""
+
+from pathlib import Path
+
+from platformdirs import user_data_path
+
+from ..utility.advertising import ORGANISATION_NAME, PACKAGE_NAME
+
+
+def data_directory() -> Path:
+    """Get the location of the data directory.
+
+    Returns:
+        The location of the data directory.
+
+    Note:
+        As a side effect, if the directory doesn't exist it will be created.
+    """
+    (target_directory := user_data_path(ORGANISATION_NAME, PACKAGE_NAME)).mkdir(
+        parents=True, exist_ok=True
+    )
+    return target_directory

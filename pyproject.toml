@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tui-md-editor"
+version = "0.1.0"
+description = "A TUI markdown editor built with Textual (forked from Frogmouth)"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "textual==0.53.1",
+    "httpx>=0.24.0",
+    "markdown-it-py>=2.0.0",
+    "mdit-py-plugins>=0.4.0",
+    "typing-extensions>=4.5.0",
+    "platformdirs>=3.0.0",
+]
+
+[project.scripts]
+tui-md-editor = "tui_md_editor.app.app:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tui_md_editor"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
