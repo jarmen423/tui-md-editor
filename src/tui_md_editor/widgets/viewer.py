@@ -26,6 +26,7 @@ from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import VerticalScroll
+from textual.events import Key
 from textual.message import Message
 from textual.reactive import var
 from textual.widgets import ContentSwitcher, Markdown, TextArea
@@ -43,6 +44,26 @@ Welcome to {APPLICATION_TITLE}!
 Press **Ctrl+E** to edit the current document.
 Press **Ctrl+S** to save your changes.
 """
+
+
+class IndentingTextArea(TextArea):
+    """A TextArea that handles Tab key for indentation instead of focus change."""
+
+    def _on_key(self, event: Key) -> None:
+        """Handle key events, specifically the Tab key for indentation.
+
+        Args:
+            event: The key event to handle.
+        """
+        if event.key == "tab":
+            # Insert 4 spaces for indentation
+            self.insert("    ")
+            # Prevent the default Tab behavior (focus change)
+            event.prevent_default()
+            event.stop()
+        else:
+            # Let the parent handle all other keys
+            super()._on_key(event)
 
 
 class History:
@@ -191,7 +212,7 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
                     front_matter.front_matter_plugin
                 ),
             )
-            yield TextArea(id="editor", language="markdown")
+            yield IndentingTextArea(id="editor", language="markdown")
 
     @property
     def document(self) -> Markdown:
@@ -199,9 +220,9 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
         return self.query_one("#markdown", Markdown)
 
     @property
-    def editor(self) -> TextArea:
+    def editor(self) -> IndentingTextArea:
         """The text area editor widget."""
-        return self.query_one("#editor", TextArea)
+        return self.query_one("#editor", IndentingTextArea)
 
     @property
     def switcher(self) -> ContentSwitcher:

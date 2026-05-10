@@ -265,3 +265,46 @@ class TestEditMode:
             document = viewer.document
             assert document is not None
             assert not viewer.edit_mode
+
+    @pytest.mark.asyncio
+    async def test_tab_key_indents_in_edit_mode(self, tmp_path: Path) -> None:
+        """Tab key inserts spaces for indentation instead of moving focus."""
+        test_file = tmp_path / "indent.md"
+        test_file.write_text("# Test", encoding="utf-8")
+
+        app = MarkdownViewer(SimpleNamespace(file=[]))
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.pause()
+            screen = app.screen
+            viewer = screen.query_one("#viewer")
+
+            screen.visit(test_file)
+            await pilot.pause()
+            await pilot.pause()
+            await pilot.pause()
+
+            viewer.toggle_edit()
+            await pilot.pause()
+
+            # Clear the text and position cursor
+            viewer.editor.text = "line1"
+            await pilot.pause()
+
+            # Move cursor to end of line
+            viewer.editor.move_cursor_relative(rows=0, columns=100)
+            await pilot.pause()
+
+            # Press Tab key
+            await pilot.press("tab")
+            await pilot.pause()
+
+            # Verify 4 spaces were inserted
+            assert viewer.editor.text == "line1    ", f"Expected 'line1    ', got '{viewer.editor.text}'"
+
+            # Press Tab again
+            await pilot.press("tab")
+            await pilot.pause()
+
+            # Verify 4 more spaces were inserted
+            assert viewer.editor.text == "line1        ", f"Expected 'line1        ', got '{viewer.editor.text}'"
