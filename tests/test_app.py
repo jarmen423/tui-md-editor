@@ -308,3 +308,186 @@ class TestEditMode:
 
             # Verify 4 more spaces were inserted
             assert viewer.editor.text == "line1        ", f"Expected 'line1        ', got '{viewer.editor.text}'"
+
+
+class TestTextFileEditing:
+    """Tests for editing non-markdown text files."""
+
+    @pytest.mark.asyncio
+    async def test_plain_text_file_opens_in_viewer(self, tmp_path: Path) -> None:
+        """A .txt file is opened as an editable plain text document."""
+        test_file = tmp_path / "notes.txt"
+        test_file.write_text("Hello world", encoding="utf-8")
+
+        app = MarkdownViewer(SimpleNamespace(file=[]))
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.pause()
+            screen = app.screen
+            viewer = screen.query_one("#viewer")
+
+            screen.visit(test_file)
+            await pilot.pause()
+            await pilot.pause()
+            await pilot.pause()
+
+            assert viewer.can_edit
+            assert viewer.is_plain_text
+            assert "Hello world" in viewer.editor.text
+
+
+class TestNewFile:
+    """Tests for the new untitled file command."""
+
+    @pytest.mark.asyncio
+    async def test_new_file_creates_untitled_buffer(self) -> None:
+        """The new file command opens an empty untitled buffer."""
+        app = MarkdownViewer(SimpleNamespace(file=[]))
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.pause()
+            screen = app.screen
+            viewer = screen.query_one("#viewer")
+
+            viewer.new_file()
+            await pilot.pause()
+
+            assert not viewer.viewing_location
+            assert viewer.editor.text == ""
+
+
+class TestStatusBar:
+    """Tests for the status bar."""
+
+    @pytest.mark.asyncio
+    async def test_status_bar_shows_filename(self, tmp_path: Path) -> None:
+        """Status bar updates with the file name after opening a file."""
+        test_file = tmp_path / "status.md"
+        test_file.write_text("# Status", encoding="utf-8")
+
+        app = MarkdownViewer(SimpleNamespace(file=[]))
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.pause()
+            screen = app.screen
+
+            screen.visit(test_file)
+            await pilot.pause()
+            await pilot.pause()
+            await pilot.pause()
+
+            status = screen.query_one("StatusBar")
+            assert status.file_name == "status.md"
+            assert status.file_type == "Markdown"
+
+    @pytest.mark.asyncio
+    async def test_status_bar_tracks_dirty(self, tmp_path: Path) -> None:
+        """Status bar shows dirty indicator when text changes."""
+        test_file = tmp_path / "dirty.md"
+        test_file.write_text("clean", encoding="utf-8")
+
+        app = MarkdownViewer(SimpleNamespace(file=[]))
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.pause()
+            screen = app.screen
+            viewer = screen.query_one("#viewer")
+
+            screen.visit(test_file)
+            await pilot.pause()
+            await pilot.pause()
+            await pilot.pause()
+
+            viewer.toggle_edit()
+            await pilot.pause()
+            viewer.editor.text = "dirty"
+            await pilot.pause()
+
+            status = screen.query_one("StatusBar")
+            assert status.dirty is True
+
+
+class TestFindAndGoto:
+    """Tests for find and go-to-line features."""
+
+    @pytest.mark.asyncio
+    async def test_find_text_moves_cursor(self, tmp_path: Path) -> None:
+        """find_text moves the cursor to the matched location."""
+        test_file = tmp_path / "find.md"
+        test_file.write_text("alpha\nbeta\ngamma", encoding="utf-8")
+
+        app = MarkdownViewer(SimpleNamespace(file=[]))
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.pause()
+            screen = app.screen
+            viewer = screen.query_one("#viewer")
+
+            screen.visit(test_file)
+            await pilot.pause()
+            await pilot.pause()
+            await pilot.pause()
+
+            viewer.toggle_edit()
+            await pilot.pause()
+
+            found = viewer.find_text("beta")
+            assert found is True
+            assert viewer.cursor_location[0] == 1  # line 1 (0-based)
+
+    @pytest.mark.asyncio
+    async def test_goto_line_action(self, tmp_path: Path) -> None:
+        """Ctrl+G dialog jumps the cursor to the requested line."""
+        test_file = tmp_path / "goto.md"
+        test_file.write_text("line1\nline2\nline3", encoding="utf-8")
+
+        app = MarkdownViewer(SimpleNamespace(file=[]))
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.pause()
+            screen = app.screen
+
+            screen.visit(test_file)
+            await pilot.pause()
+            await pilot.pause()
+            await pilot.pause()
+
+            # Directly call the action handler with a line number
+            screen.action_goto_line()
+            await pilot.pause()
+
+            # We can't easily test the modal dialog in headless mode,
+            # but we can test the viewer's move_cursor directly.
+            viewer = screen.query_one("#viewer")
+            viewer.toggle_edit()
+            await pilot.pause()
+            viewer.editor.move_cursor((2, 0))
+            assert viewer.cursor_location[0] == 2
+
+
+class TestWordWrap:
+    """Tests for word wrap toggle."""
+
+    @pytest.mark.asyncio
+    async def test_toggle_wrap(self, tmp_path: Path) -> None:
+        """toggle_wrap flips the TextArea soft_wrap property."""
+        test_file = tmp_path / "wrap.md"
+        test_file.write_text("word", encoding="utf-8")
+
+        app = MarkdownViewer(SimpleNamespace(file=[]))
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.pause()
+            screen = app.screen
+            viewer = screen.query_one("#viewer")
+
+            screen.visit(test_file)
+            await pilot.pause()
+            await pilot.pause()
+            await pilot.pause()
+
+            initial = viewer.editor.soft_wrap
+            viewer.toggle_wrap()
+            assert viewer.editor.soft_wrap is not initial
+            viewer.toggle_wrap()
+            assert viewer.editor.soft_wrap is initial

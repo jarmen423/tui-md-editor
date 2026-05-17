@@ -25,6 +25,12 @@ class Config:
     navigation_left: bool = True
     """Should navigation be docked to the left side of the screen?"""
 
+    auto_save: bool = False
+    """Should changes be saved automatically?"""
+
+    auto_save_interval: int = 30
+    """Interval in seconds between auto-saves."""
+
 
 def config_file() -> Path:
     """Get the path to the configuration file.

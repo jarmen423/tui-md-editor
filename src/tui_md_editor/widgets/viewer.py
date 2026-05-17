@@ -22,7 +22,7 @@ from webbrowser import open as open_url
 from httpx import URL, AsyncClient, HTTPStatusError, RequestError
 from markdown_it import MarkdownIt
 from mdit_py_plugins import front_matter
-from textual import work
+from textual import on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import VerticalScroll
@@ -33,37 +33,157 @@ from textual.widgets import ContentSwitcher, Markdown, TextArea
 from typing_extensions import Final
 
 from .. import __version__
-from ..dialogs import ErrorDialog
+from ..dialogs import ErrorDialog, FindDialog, InputDialog
 from ..utility.advertising import APPLICATION_TITLE, USER_AGENT
+from ..utility.type_tests import is_text_file, language_for_path, maybe_markdown
 
-PLACEHOLDER = f"""\
-# {APPLICATION_TITLE} {__version__}
+def _welcome_text() -> str:
+    """Generate a welcome screen with recent files from history."""
+    from ..data.history import load_history
 
-Welcome to {APPLICATION_TITLE}!
+    history = load_history()
+    lines = [
+        f"# {APPLICATION_TITLE} {__version__}",
+        "",
+        "Welcome to the TUI Markdown Editor!",
+        "",
+        "| Key | Action |",
+        "|-----|--------|",
+        "| `/` or `:` | Focus the omnibox |",
+        "| `Ctrl+E` | Toggle edit / preview |",
+        "| `Ctrl+S` | Save changes |",
+        "| `Ctrl+F` | Find in file |",
+        "| `Ctrl+G` | Go to line |",
+        "| `Ctrl+N` | New file |",
+        "| `Ctrl+\\` | Split view |",
+        "| `F1` | Help |",
+        "",
+    ]
+    if history:
+        lines.append("## Recent Files")
+        lines.append("")
+        for item in reversed(history[-10:]):
+            path_str = str(item)
+            lines.append(f"- `{path_str}`")
+        lines.append("")
+    return "\n".join(lines)
 
-Press **Ctrl+E** to edit the current document.
-Press **Ctrl+S** to save your changes.
-"""
+
+def _offset_to_location(text: str, offset: int) -> tuple[int, int]:
+    """Convert a character offset into a (line, column) location.
+
+    Args:
+        text: The text to operate on.
+        offset: The character offset (0-based).
+
+    Returns:
+        A (line, column) tuple.
+    """
+    line = 0
+    col = 0
+    for idx, ch in enumerate(text):
+        if idx == offset:
+            return (line, col)
+        if ch == "\n":
+            line += 1
+            col = 0
+        else:
+            col += 1
+    return (line, col)
 
 
 class IndentingTextArea(TextArea):
-    """A TextArea that handles Tab key for indentation instead of focus change."""
+    """A TextArea that handles Tab key for indentation and markdown formatting shortcuts."""
+
+    def _wrap_selection(self, wrapper: str) -> None:
+        """Wrap the current selection (or insert placeholders).
+
+        Args:
+            wrapper: The string to wrap around (e.g. '**').
+        """
+        start, end = self.selection
+        if start != end:
+            text = self.selected_text
+            self.replace(f"{wrapper}{text}{wrapper}", start, end)
+            # Place cursor after the wrapped text.
+            new_end = (end[0], end[1] + len(wrapper) * 2)
+            self.move_cursor(new_end)
+        else:
+            self.insert(f"{wrapper}{wrapper}")
+            # Move cursor inside the wrappers.
+            self.move_cursor_relative(columns=-len(wrapper))
 
     def _on_key(self, event: Key) -> None:
-        """Handle key events, specifically the Tab key for indentation.
+        """Handle key events for indentation and markdown formatting.
 
         Args:
             event: The key event to handle.
         """
-        if event.key == "tab":
-            # Insert 4 spaces for indentation
+        key = event.key
+        if key == "tab":
             self.insert("    ")
-            # Prevent the default Tab behavior (focus change)
             event.prevent_default()
             event.stop()
-        else:
-            # Let the parent handle all other keys
-            super()._on_key(event)
+            return
+
+        # Markdown formatting shortcuts (only when editing markdown).
+        if getattr(self, "is_markdown_file", True):
+            if key == "ctrl+b":
+                self._wrap_selection("**")
+                event.prevent_default()
+                event.stop()
+                return
+            if key == "ctrl+i":
+                self._wrap_selection("*")
+                event.prevent_default()
+                event.stop()
+                return
+            if key == "ctrl+k":
+                self._wrap_selection("`")
+                event.prevent_default()
+                event.stop()
+                return
+            if key == "ctrl+shift+l":
+                # Bullet list: insert '- ' at line start.
+                row, _ = self.cursor_location
+                lines = self.text.split("\n")
+                if 0 <= row < len(lines):
+                    lines[row] = "- " + lines[row]
+                    self.text = "\n".join(lines)
+                    self.move_cursor((row, 0))
+                    self.move_cursor_relative(columns=2)
+                event.prevent_default()
+                event.stop()
+                return
+            if key == "ctrl+shift+o":
+                # Ordered list: insert '1. ' at line start.
+                row, _ = self.cursor_location
+                lines = self.text.split("\n")
+                if 0 <= row < len(lines):
+                    lines[row] = "1. " + lines[row]
+                    self.text = "\n".join(lines)
+                    self.move_cursor((row, 0))
+                    self.move_cursor_relative(columns=3)
+                event.prevent_default()
+                event.stop()
+                return
+            if key in ("ctrl+1", "ctrl+2", "ctrl+3", "ctrl+4", "ctrl+5", "ctrl+6"):
+                level = int(key[-1])
+                row, _ = self.cursor_location
+                lines = self.text.split("\n")
+                if 0 <= row < len(lines):
+                    # Remove existing header markers if present.
+                    stripped = lines[row].lstrip()
+                    if stripped.startswith("#"):
+                        stripped = stripped.lstrip("#").lstrip()
+                    lines[row] = "#" * level + " " + stripped
+                    self.text = "\n".join(lines)
+                    self.move_cursor((row, 0))
+                event.prevent_default()
+                event.stop()
+                return
+
+        super()._on_key(event)
 
 
 class History:
@@ -158,6 +278,25 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
         border: none;
         padding: 0 1;
     }
+
+    Viewer #split {
+        width: 100%;
+        height: 100%;
+    }
+
+    Viewer #split_editor {
+        width: 50%;
+        height: 100%;
+        border: none;
+        padding: 0 1;
+    }
+
+    Viewer #split_markdown {
+        width: 50%;
+        height: 100%;
+        border: none;
+        padding: 0 1;
+    }
     """
 
     BINDINGS = [
@@ -176,6 +315,12 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
 
     edit_mode: var[bool] = var(False)
     """Is the widget currently in edit mode (showing the TextArea)?"""
+
+    is_plain_text: var[bool] = var(False)
+    """Is the current document a plain text file (not Markdown)?"""
+
+    split_mode: var[bool] = var(False)
+    """Is the widget in split view (editor + preview side-by-side)?"""
 
     class ViewerMessage(Message):
         """Base class for viewer messages."""
@@ -202,17 +347,31 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
     class DocumentSaved(ViewerMessage):
         """Message sent when a local document has been saved."""
 
+    class CursorMoved(ViewerMessage):
+        """Message sent when the editor cursor moves."""
+
     def compose(self) -> ComposeResult:
-        """Compose the markdown viewer with embedded editor."""
+        """Compose the markdown viewer with embedded editor and split view."""
+        welcome = _welcome_text()
         with ContentSwitcher(initial="markdown", id="viewer_switcher"):
             yield Markdown(
-                PLACEHOLDER,
+                welcome,
                 id="markdown",
                 parser_factory=lambda: MarkdownIt("gfm-like").use(
                     front_matter.front_matter_plugin
                 ),
             )
             yield IndentingTextArea(id="editor", language="markdown")
+            from textual.containers import Horizontal
+            with Horizontal(id="split"):
+                yield IndentingTextArea(id="split_editor", language="markdown")
+                yield Markdown(
+                    welcome,
+                    id="split_markdown",
+                    parser_factory=lambda: MarkdownIt("gfm-like").use(
+                        front_matter.front_matter_plugin
+                    ),
+                )
 
     @property
     def document(self) -> Markdown:
@@ -223,6 +382,16 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
     def editor(self) -> IndentingTextArea:
         """The text area editor widget."""
         return self.query_one("#editor", IndentingTextArea)
+
+    @property
+    def split_editor(self) -> IndentingTextArea:
+        """The text area in split view."""
+        return self.query_one("#split_editor", IndentingTextArea)
+
+    @property
+    def split_markdown(self) -> Markdown:
+        """The markdown widget in split view."""
+        return self.query_one("#split_markdown", Markdown)
 
     @property
     def switcher(self) -> ContentSwitcher:
@@ -248,15 +417,40 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
         """
         return self.viewing_location and isinstance(self.location, Path)
 
+    @property
+    def cursor_location(self) -> tuple[int, int]:
+        """Current cursor location as (line, column)."""
+        return self.editor.cursor_location
+
+    @property
+    def word_count(self) -> int:
+        """Number of words in the current editor text."""
+        return len(self.editor.text.split())
+
     def __init__(self, *args, **kwargs) -> None:
         """Initialise the viewer and editor state."""
         super().__init__(*args, **kwargs)
         self._raw_content: str = ""
         self._is_dirty: bool = False
+        self._new_file_path: Path | None = None
+        self._auto_save_timer = None
 
     def on_mount(self) -> None:
-        """Post-mount: disable focus on Markdown children to avoid confusion."""
+        """Post-mount: disable focus on Markdown children and start auto-save."""
         self.document.can_focus_children = False
+        self.split_markdown.can_focus_children = False
+        from ..data.config import load_config
+
+        config = load_config()
+        if config.auto_save:
+            self._auto_save_timer = self.set_interval(
+                config.auto_save_interval, self._auto_save
+            )
+
+    def _auto_save(self) -> None:
+        """Auto-save the current document if dirty and editable."""
+        if self._is_dirty and (self.can_edit or self._new_file_path is not None):
+            self.save_file()
 
     def scroll_to_block(self, block_id: str) -> None:
         """Scroll the document to the given block ID.
@@ -299,7 +493,16 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
             self._raw_content = raw
             self._is_dirty = False
             self.editor.text = raw
-            await self.document.load(location)
+            self.is_plain_text = not maybe_markdown(location)
+            lang = language_for_path(location)
+            self.editor.language = lang
+            self.editor.is_markdown_file = not self.is_plain_text
+            if self.is_plain_text:
+                # For plain text files, show the raw text in the markdown
+                # widget too (it renders unformatted).
+                self.document.update(raw)
+            else:
+                await self.document.load(location)
         except OSError as error:
             self.app.push_screen(
                 ErrorDialog(
@@ -343,6 +546,9 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
             self._raw_content = response.text
             self._is_dirty = False
             self.editor.text = response.text
+            self.editor.language = "markdown"
+            self.is_plain_text = not maybe_markdown(location)
+            self.editor.is_markdown_file = not self.is_plain_text
             self.document.update(response.text)
             self._post_load(location, remember)
         else:
@@ -378,11 +584,30 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
             content: The text to show.
         """
         self.viewing_location = False
+        self.is_plain_text = False
         self._raw_content = content
         self._is_dirty = False
         self.editor.text = content
+        self.editor.language = "markdown"
+        self.editor.is_markdown_file = True
         self.document.update(content)
         self.scroll_home(animate=False)
+
+    def new_file(self) -> None:
+        """Open a new untitled buffer."""
+        if self.edit_mode:
+            self.toggle_edit()
+        self.viewing_location = False
+        self.is_plain_text = False
+        self._raw_content = ""
+        self._is_dirty = False
+        self._new_file_path = None
+        self.editor.text = ""
+        self.editor.language = "markdown"
+        self.editor.is_markdown_file = True
+        self.document.update(_welcome_text())
+        self.scroll_home(animate=False)
+        self.post_message(self.LocationChanged(self))
 
     def toggle_edit(self) -> None:
         """Toggle between Markdown preview and TextArea edit mode.
@@ -390,11 +615,15 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
         If the current location is a remote URL, shows a notification that
         the document is read-only.
         """
-        if not self.viewing_location:
+        if self.split_mode:
+            self.toggle_split()
+            return
+
+        if not self.viewing_location and self._new_file_path is None:
             self.app.notify("No document is currently open.", severity="warning")
             return
 
-        if not self.can_edit:
+        if not self.can_edit and self._new_file_path is None:
             self.app.notify(
                 "Remote documents are read-only.", severity="information"
             )
@@ -419,13 +648,49 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
 
         self.post_message(self.EditModeChanged(self))
 
+    def toggle_split(self) -> None:
+        """Toggle split view (editor + preview side-by-side)."""
+        if not self.viewing_location and self._new_file_path is None:
+            self.app.notify("No document is currently open.", severity="warning")
+            return
+
+        if not self.can_edit and self._new_file_path is None:
+            self.app.notify(
+                "Remote documents are read-only.", severity="information"
+            )
+            return
+
+        if self.split_mode:
+            # Leaving split mode: copy text back to main editor
+            self.editor.text = self.split_editor.text
+            self.edit_mode = False
+            self.split_mode = False
+            self.switcher.styles.height = "auto"
+            self.switcher.current = "markdown"
+            self.document.update(self.editor.text)
+            self.document.focus()
+            self.refresh(layout=True)
+        else:
+            # Entering split mode: sync split editor and show it
+            self.split_editor.text = self.editor.text
+            self.split_editor.language = self.editor.language
+            self.split_editor.is_markdown_file = self.editor.is_markdown_file
+            self.split_markdown.update(self.editor.text)
+            self.split_mode = True
+            self.edit_mode = False
+            self.switcher.styles.height = "100%"
+            self.switcher.current = "split"
+            self.split_editor.focus()
+
+        self.post_message(self.EditModeChanged(self))
+
     def save_file(self) -> None:
         """Save the current editor buffer back to disk.
 
         Only works for local file paths. Shows a notification on success
         or failure.
         """
-        if not self.can_edit:
+        if not self.can_edit and self._new_file_path is None:
             self.app.notify(
                 "Nothing to save or document is read-only.", severity="warning"
             )
@@ -436,28 +701,124 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
             return
 
         location = self.location
-        assert isinstance(location, Path)
+        if location is None and self._new_file_path is not None:
+            location = self._new_file_path
+
+        if location is None:
+            # Untitled buffer — prompt for path via callback.
+            self.app.push_screen(
+                InputDialog("Save as:", str(Path.cwd() / "untitled.md")),
+                self._do_save,
+            )
+            return
+
+        self._do_save(location)
+
+    def _do_save(self, location: Path | str | None) -> None:
+        """Perform the actual save operation.
+
+        Args:
+            location: The path to save to. May be a string from the dialog.
+        """
+        if location is None:
+            return
+        path = Path(location).expanduser().resolve()
         try:
-            location.write_text(self.editor.text, encoding="utf-8")
+            path.write_text(self.editor.text, encoding="utf-8")
             self._raw_content = self.editor.text
             self._is_dirty = False
+            self._new_file_path = None
             self.app.notify("Saved successfully!", severity="information", timeout=2)
             self.post_message(self.DocumentSaved(self))
+            # If this was an untitled buffer, convert it into a real visit.
+            if self.location != path:
+                self.visit(path)
         except OSError as error:
             self.app.push_screen(
                 ErrorDialog(
                     "Error saving document",
-                    f"{location}\n\n{error}.",
+                    f"{path}\n\n{error}.",
                 )
             )
 
-    def on_text_area_changed(self) -> None:
-        """Track dirty state when the user types in the editor."""
+    @on(TextArea.Changed, "#editor")
+    def on_editor_changed(self) -> None:
+        """Track dirty state and sync split view when the main editor types."""
         if self.editor.text == self._raw_content:
             if self._is_dirty:
                 self._is_dirty = False
         elif not self._is_dirty:
             self._is_dirty = True
+        self.post_message(self.CursorMoved(self))
+
+    @on(TextArea.Changed, "#split_editor")
+    def on_split_editor_changed(self) -> None:
+        """Track dirty state and sync markdown when the split editor types."""
+        if self.split_editor.text == self._raw_content:
+            if self._is_dirty:
+                self._is_dirty = False
+        elif not self._is_dirty:
+            self._is_dirty = True
+        if self.split_mode:
+            self.split_markdown.update(self.split_editor.text)
+        self.post_message(self.CursorMoved(self))
+
+    def on_text_area_selection_changed(self) -> None:
+        """Notify that the cursor has moved."""
+        self.post_message(self.CursorMoved(self))
+
+    def find_text(self, term: str, forward: bool = True) -> bool:
+        """Find the next occurrence of ``term`` in the editor.
+
+        Args:
+            term: The text to search for.
+            forward: Search forward (``True``) or backward (``False``).
+
+        Returns:
+            ``True`` if a match was found and cursor moved.
+        """
+        if not term:
+            return False
+        text = self.editor.text
+        cursor = self.editor.cursor_location
+        # Convert cursor location to a character offset.
+        lines = text.split("\n")
+        offset = sum(len(lines[i]) + 1 for i in range(cursor[0])) + cursor[1]
+
+        if forward:
+            pos = text.find(term, offset + 1)
+            if pos == -1:
+                pos = text.find(term, 0)
+        else:
+            pos = text.rfind(term, 0, offset)
+            if pos == -1:
+                pos = text.rfind(term)
+
+        if pos == -1:
+            self.app.notify("No matches found.", severity="warning")
+            return False
+
+        loc = _offset_to_location(text, pos)
+        self.editor.move_cursor(loc, center=True)
+        return True
+
+    def action_find(self) -> None:
+        """Open the find dialog and jump to the first match."""
+        if not self.edit_mode:
+            self.toggle_edit()
+
+        def on_result(result: tuple[str, bool] | None) -> None:
+            if result is not None:
+                term, forward = result
+                self.find_text(term, forward)
+
+        self.app.push_screen(FindDialog(), on_result)
+
+    def toggle_wrap(self) -> None:
+        """Toggle soft word wrap in the editor."""
+        self.editor.soft_wrap = not self.editor.soft_wrap
+        state = "on" if self.editor.soft_wrap else "off"
+        self.app.notify(f"Word wrap {state}.", severity="information", timeout=1)
 
     def _jump(self, direction: Callable[[], bool]) -> None:
         """Jump in a particular direction within the history.

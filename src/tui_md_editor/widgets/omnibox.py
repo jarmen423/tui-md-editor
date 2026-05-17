@@ -54,6 +54,7 @@ class Omnibox(Input):
         "gl": "gitlab",
         "h": "history",
         "l": "local",
+        "n": "new",
         "obs": "obsidian",
         "toc": "contents",
         "q": "quit",
@@ -135,6 +136,38 @@ class Omnibox(Input):
             self.target = target
             """The target directory to change to."""
 
+    class CreatePathCommand(Message):
+        """Command for creating a new file or directory."""
+
+        def __init__(self, target: Path, is_directory: bool) -> None:
+            """Initialise the create path command.
+
+            Args:
+                target: The path to create.
+                is_directory: Whether the target is a directory.
+            """
+            super().__init__()
+            self.target = target
+            """The path to create."""
+            self.is_directory = is_directory
+            """Whether to create a directory."""
+
+    class NewFileCommand(Message):
+        """Command to open a new untitled file."""
+
+    class ExportHtmlCommand(Message):
+        """Command to export the current document to HTML."""
+
+        def __init__(self, target: Path) -> None:
+            """Initialise the export command.
+
+            Args:
+                target: The path to write the HTML to.
+            """
+            super().__init__()
+            self.target = target
+            """The target file path."""
+
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle the user submitting the input.
 
@@ -169,6 +202,12 @@ class Omnibox(Input):
                 # It's something that exists in the filesystem, but it's not
                 # a directory or a file. Let's nope on that for now.
                 return
+        elif (path := Path(submitted).expanduser().resolve()).parent.exists() or True:
+            # The path doesn't exist. If it looks like a directory request
+            # (trailing slash or backslash), offer to create it.
+            is_dir = submitted.rstrip().endswith(("/", "\\"))
+            self.post_message(self.CreatePathCommand(path, is_dir))
+            self.value = submitted
         elif self._is_command(command := submitted.lower()):
             # Having checked for URLs and existing filesystem things, it's
             # now safe to look for commands. Having got here, it is a match
@@ -222,6 +261,21 @@ class Omnibox(Input):
     def command_history(self, _: str) -> None:
         """The history command."""
         self.post_message(self.HistoryCommand())
+
+    def command_new(self, _: str) -> None:
+        """Open a new untitled file."""
+        self.post_message(self.NewFileCommand())
+
+    def command_export(self, arguments: str) -> None:
+        """Export the current document to HTML.
+
+        Args:
+            arguments: The command arguments (expected: ``html <path>``).
+        """
+        parts = arguments.strip().split(None, 1)
+        if len(parts) < 2 or parts[0].lower() != "html":
+            return
+        self.post_message(self.ExportHtmlCommand(Path(parts[1]).expanduser().resolve()))
 
     class AboutCommand(Message):
         """The about command."""

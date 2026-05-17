@@ -12,6 +12,17 @@ It keeps all of Frogmouth's excellent navigation, history, bookmarks, and scroll
 - **Save** — Press `Ctrl+S` to write changes back to disk
 - **Dirty tracking** — Know when you have unsaved changes
 - **Remote URLs** — Open Markdown files from the web (read-only)
+- **Edit any text file** — `.txt`, `.py`, `.json`, `.yaml`, and many more open as editable plain text
+- **Create files & directories** — Type a non-existent path into the omnibox to create it
+- **New file** — Press `:new` or `Ctrl+Shift+N` for an untitled buffer
+- **Find in file** — `Ctrl+F` to search and jump to matches
+- **Go to line** — `Ctrl+G` for quick line navigation
+- **Word wrap** — `Alt+Z` toggles soft wrap
+- **Split view** — `Ctrl+\` shows editor and preview side-by-side
+- **Status bar** — Shows filename, dirty state, file type, cursor position, and word count
+- **Markdown formatting shortcuts** — `Ctrl+B` bold, `Ctrl+I` italic, `Ctrl+K` code, `Ctrl+Shift+L` bullets, `Ctrl+Shift+O` numbered lists, `Ctrl+1..6` headers
+- **Auto-save** — Optional automatic saving every 30 seconds
+- **Export to HTML** — `:export html <path>` exports rendered markdown
 
 ## Installation
 
@@ -57,15 +68,37 @@ tui-md-editor ~/notes.md
 |-----|--------|
 | `Ctrl+E` | Toggle Edit / Preview mode |
 | `Ctrl+S` | Save the current file |
+| `Ctrl+F` | Find text in the editor |
+| `Ctrl+G` | Go to line number |
+| `Alt+Z` | Toggle word wrap |
+| `Ctrl+\` | Toggle split view (editor + preview side-by-side) |
+| `Ctrl+B` | **Bold** selection (markdown files, edit mode) |
+| `Ctrl+I` | *Italic* selection (markdown files, edit mode) |
+| `Ctrl+K` | `Code` selection (markdown files, edit mode) |
+| `Ctrl+Shift+L` | Insert bullet list (markdown files, edit mode) |
+| `Ctrl+Shift+O` | Insert numbered list (markdown files, edit mode) |
+| `Ctrl+1` … `Ctrl+6` | Insert H1 … H6 (markdown files, edit mode) |
+
+### Omnibox commands
+
+Press `/` then type any command:
+
+| Command | Description |
+|---------|-------------|
+| `new` | Open a new untitled file |
+| `export html <path>` | Export current markdown to HTML |
 
 ## Project Structure
 
 This is a fork of Frogmouth with the following modifications:
 
-- `src/tui_md_editor/widgets/viewer.py` — Added `TextArea` editor inside a `ContentSwitcher`, plus `toggle_edit()` and `save_file()` methods
-- `src/tui_md_editor/screens/main.py` — Added `Ctrl+E` and `Ctrl+S` bindings wired to the Viewer
-- `src/tui_md_editor/app/app.py` — Updated entry point and branding
-- `src/tui_md_editor/utility/advertising.py` — Updated app title
+- `src/tui_md_editor/widgets/viewer.py` — Added `TextArea` editor inside a `ContentSwitcher`, plus `toggle_edit()`, `save_file()`, `toggle_split()`, `find_text()`, `new_file()`, syntax highlighting, auto-save, and markdown formatting shortcuts
+- `src/tui_md_editor/widgets/status_bar.py` — New status bar showing file info, cursor position, and word count
+- `src/tui_md_editor/widgets/omnibox.py` — Added `new` and `export` commands, plus creation of non-existent paths
+- `src/tui_md_editor/screens/main.py` — Added keybindings and actions for find, go-to-line, word wrap, split view, and status bar updates
+- `src/tui_md_editor/utility/type_tests.py` — Added `is_text_file()` and `language_for_path()` for editing any text file
+- `src/tui_md_editor/data/config.py` — Added `auto_save` and `auto_save_interval` options
+- `src/tui_md_editor/dialogs/find_dialog.py` — New modal find dialog
 
 ## Testing
 

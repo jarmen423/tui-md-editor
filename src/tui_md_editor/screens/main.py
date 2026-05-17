@@ -17,13 +17,14 @@ from textual.widgets import Footer, Markdown
 
 from .. import __version__
 from ..data import load_config, load_history, save_config, save_history
-from ..dialogs import ErrorDialog, HelpDialog, InformationDialog, InputDialog
+from ..dialogs import ErrorDialog, HelpDialog, InformationDialog, InputDialog, YesNoDialog
 from ..utility import (
     build_raw_bitbucket_url,
     build_raw_codeberg_url,
     build_raw_github_url,
     build_raw_gitlab_url,
     is_likely_url,
+    is_text_file,
     maybe_markdown,
 )
 from ..utility.advertising import (
@@ -34,7 +35,7 @@ from ..utility.advertising import (
     PACKAGE_NAME,
     TEXTUAL_URL,
 )
-from ..widgets import Navigation, Omnibox, Viewer
+from ..widgets import Navigation, Omnibox, StatusBar, Viewer
 from ..widgets.navigation_panes import Bookmarks, History, LocalFiles
 
 
@@ -88,6 +89,11 @@ class Main(Screen[None]):  # pylint:disable=too-many-public-methods
         Binding("ctrl+n", "navigation", "Navigation"),
         Binding("ctrl+e", "toggle_edit", "Edit", priority=True),
         Binding("ctrl+s", "save_file", "Save", priority=True),
+        Binding("ctrl+f", "find", "Find", priority=True),
+        Binding("ctrl+g", "goto_line", "Go To", priority=True),
+        Binding("ctrl+n", "navigation", "Navigation"),
+        Binding("alt+z", "toggle_wrap", "Wrap", priority=True),
+        Binding("ctrl+backslash", "toggle_split", "Split", priority=True),
         Binding("ctrl+q", "app.quit", "Quit"),
         Binding("f10", "toggle_theme", "", show=False),
     ]
@@ -112,6 +118,7 @@ class Main(Screen[None]):  # pylint:disable=too-many-public-methods
         with Horizontal():
             yield Navigation()
             yield Viewer(classes="focusable", id="viewer")
+        yield StatusBar()
         yield Footer()
 
     def visit(self, location: Path | URL, remember: bool = True) -> None:
@@ -127,9 +134,11 @@ class Main(Screen[None]):  # pylint:disable=too-many-public-methods
             # ...attempt to visit it in the viewer.
             self.query_one(Viewer).visit(location, remember)
         elif isinstance(location, Path):
-            # So, it's not Markdown, but it *is* a Path of some sort. If the
-            # resource seems to exist...
-            if location.exists():
+            # So, it's not Markdown, but it *is* a Path of some sort.
+            if is_text_file(location):
+                # It's a text file we can edit — open in the viewer.
+                self.query_one(Viewer).visit(location, remember)
+            elif location.exists():
                 # ...ask the OS to open it.
                 open_url(f"file:///{location.absolute()}")
             else:
@@ -155,7 +164,8 @@ class Main(Screen[None]):  # pylint:disable=too-many-public-methods
         # allowing the content to get focus.
         #
         # https://github.com/Textualize/textual/issues/2380
-        self.query_one(Markdown).can_focus_children = False
+        for markdown in self.query(Markdown):
+            markdown.can_focus_children = False
 
         # Load up any history that might be saved.
         if history := load_history():
@@ -206,6 +216,80 @@ class Main(Screen[None]):  # pylint:disable=too-many-public-methods
     def on_omnibox_bookmarks_command(self) -> None:
         """Handle being asked to view the bookmarks."""
         self.action_bookmarks()
+
+    def on_omnibox_create_path_command(
+        self, event: Omnibox.CreatePathCommand
+    ) -> None:
+        """Handle a request to create a new file or directory.
+
+        Args:
+            event: The create path command event.
+        """
+        target = event.target
+        kind = "directory" if event.is_directory else "file"
+
+        def do_create(confirmed: bool) -> None:
+            if not confirmed:
+                return
+            try:
+                if event.is_directory:
+                    target.mkdir(parents=True, exist_ok=True)
+                    self.query_one(Navigation).jump_to_local_files(target)
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.touch()
+                    self.visit(target)
+            except OSError as error:
+                self.app.push_screen(
+                    ErrorDialog(
+                        f"Error creating {kind}",
+                        f"{target}\n\n{error}.",
+                    )
+                )
+
+        self.app.push_screen(
+            YesNoDialog(
+                f"Create {kind}?",
+                f"{target} does not exist. Create it?",
+            ),
+            do_create,
+        )
+
+    def on_omnibox_new_file_command(self, event: Omnibox.NewFileCommand) -> None:
+        """Handle a request to open a new untitled file.
+
+        Args:
+            event: The new file command event.
+        """
+        self.query_one(Viewer).new_file()
+
+    def on_omnibox_export_html_command(
+        self, event: Omnibox.ExportHtmlCommand
+    ) -> None:
+        """Handle a request to export the current document to HTML.
+
+        Args:
+            event: The export HTML command event.
+        """
+        viewer = self.query_one(Viewer)
+        raw = viewer.editor.text
+        if not raw:
+            self.app.notify("Nothing to export.", severity="warning")
+            return
+        try:
+            from markdown_it import MarkdownIt
+            from mdit_py_plugins import front_matter
+
+            md = MarkdownIt("gfm-like").use(front_matter.front_matter_plugin)
+            html = md.render(raw)
+            event.target.write_text(html, encoding="utf-8")
+            self.app.notify(
+                f"Exported to {event.target}", severity="information", timeout=2
+            )
+        except OSError as error:
+            self.app.push_screen(
+                ErrorDialog("Export failed", f"{event.target}\n\n{error}.")
+            )
 
     def on_omnibox_local_chdir_command(self, event: Omnibox.LocalChdirCommand) -> None:
         """Handle being asked to view a new directory in the local files picker.
@@ -345,12 +429,60 @@ class Main(Screen[None]):  # pylint:disable=too-many-public-methods
             event: The location change event.
         """
         # Update the omnibox with whatever is appropriate for the new location.
+        viewer = event.viewer
         self.query_one(Omnibox).visiting = (
-            str(event.viewer.location) if event.viewer.location is not None else ""
+            str(viewer.location) if viewer.location is not None else ""
         )
+        # Update the status bar.
+        status = self.query_one(StatusBar)
+        if viewer.location is None:
+            status.file_name = "Untitled"
+            status.file_type = ""
+        elif isinstance(viewer.location, Path):
+            status.file_name = viewer.location.name
+            if viewer.is_plain_text:
+                status.file_type = "Plain Text"
+            else:
+                status.file_type = "Markdown"
+        else:
+            status.file_name = str(viewer.location)
+            status.file_type = "Remote"
+        status.dirty = viewer.is_dirty
+        status.words = viewer.word_count
         # Having safely arrived at a new location, that implies that we want
         # to focus on the viewer.
-        self.query_one(Viewer).focus()
+        viewer.focus()
+
+    def on_viewer_edit_mode_changed(self, event: Viewer.EditModeChanged) -> None:
+        """Update status bar when edit mode changes.
+
+        Args:
+            event: The edit mode change event.
+        """
+        status = self.query_one(StatusBar)
+        status.line = event.viewer.cursor_location[0]
+        status.column = event.viewer.cursor_location[1]
+
+    def on_viewer_cursor_moved(self, event: Viewer.CursorMoved) -> None:
+        """Update status bar when cursor moves.
+
+        Args:
+            event: The cursor moved event.
+        """
+        status = self.query_one(StatusBar)
+        status.line = event.viewer.cursor_location[0]
+        status.column = event.viewer.cursor_location[1]
+        status.words = event.viewer.word_count
+        status.dirty = event.viewer.is_dirty
+
+    def on_viewer_document_saved(self, event: Viewer.DocumentSaved) -> None:
+        """Update status bar when document is saved.
+
+        Args:
+            event: The document saved event.
+        """
+        status = self.query_one(StatusBar)
+        status.dirty = False
 
     def on_viewer_history_updated(self, event: Viewer.HistoryUpdated) -> None:
         """Handle the viewer updating the history.
@@ -563,5 +695,35 @@ class Main(Screen[None]):  # pylint:disable=too-many-public-methods
     def action_save_file(self) -> None:
         """Save the current document (``Ctrl+S``)."""
         self.query_one(Viewer).save_file()
+
+    def action_find(self) -> None:
+        """Open the find dialog (``Ctrl+F``)."""
+        self.query_one(Viewer).action_find()
+
+    def action_goto_line(self) -> None:
+        """Open the go-to-line dialog (``Ctrl+G``)."""
+
+        def jump(line_str: str | None) -> None:
+            if line_str is None:
+                return
+            try:
+                line = int(line_str)
+            except ValueError:
+                self.app.notify("Invalid line number.", severity="warning")
+                return
+            viewer = self.query_one(Viewer)
+            max_line = viewer.editor.text.count("\n") + 1
+            target = max(1, min(line, max_line))
+            viewer.editor.move_cursor((target - 1, 0), center=True)
+
+        self.app.push_screen(InputDialog("Line number:"), jump)
+
+    def action_toggle_wrap(self) -> None:
+        """Toggle word wrap in the editor (``Alt+Z``)."""
+        self.query_one(Viewer).toggle_wrap()
+
+    def action_toggle_split(self) -> None:
+        """Toggle split view (``Ctrl+Backslash``)."""
+        self.query_one(Viewer).toggle_split()
 
 

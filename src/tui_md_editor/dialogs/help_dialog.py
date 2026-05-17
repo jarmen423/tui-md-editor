@@ -47,6 +47,23 @@ Welcome to {APPLICATION_TITLE} Help!
 | `F2` | Details about {APPLICATION_TITLE} |
 | `F10` | Toggle dark/light theme |
 
+## Editing keys
+
+| Key | Command |
+| -- | -- |
+| `Ctrl+e` | Toggle edit / preview mode |
+| `Ctrl+s` | Save the current file |
+| `Ctrl+f` | Find text in the editor |
+| `Ctrl+g` | Go to line number |
+| `Alt+z` | Toggle word wrap |
+| `Ctrl+\` | Toggle split view (editor + preview) |
+| `Ctrl+b` | **Bold** selection (edit mode, markdown files) |
+| `Ctrl+i` | *Italic* selection (edit mode, markdown files) |
+| `Ctrl+k` | `Code` selection (edit mode, markdown files) |
+| `Ctrl+shift+l` | Insert bullet list (edit mode, markdown files) |
+| `Ctrl+shift+o` | Insert numbered list (edit mode, markdown files) |
+| `Ctrl+1` … `Ctrl+6` | Insert H1 … H6 (edit mode, markdown files) |
+
 ## Commands
 
 Press `/` or click the address bar, then enter any of the following commands:
@@ -61,11 +78,13 @@ Press `/` or click the address bar, then enter any of the following commands:
 | `chdir` | `cd` | `<dir>` | Switch the local file browser to a new directory |
 | `contents` | `c`, `toc` | | Show the table of contents for the document |
 | `discord` | | | Visit the Textualize Discord server |
+| `export` | | `html <path>` | Export current markdown to HTML |
 | `github` | `gh` | `<repo-info>` | View a file on GitHub (see below) |
 | `gitlab` | `gl` | `<repo-info>` | View a file on GitLab (see below) |
 | `help` | `?` | | Show this document |
 | `history` | `h` | | Show the history |
 | `local` | `l` | | Show the local file browser |
+| `new` | `n` | | Open a new untitled file |
 | `quit` | `q` | | Quit the viewer |
 
 ## Git forge quick view

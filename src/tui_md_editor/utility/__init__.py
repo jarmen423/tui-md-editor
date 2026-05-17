@@ -6,7 +6,7 @@ from .forge import (
     build_raw_github_url,
     build_raw_gitlab_url,
 )
-from .type_tests import is_likely_url, maybe_markdown
+from .type_tests import is_likely_url, is_text_file, maybe_markdown
 
 __all__ = [
     "build_raw_bitbucket_url",
@@ -14,5 +14,6 @@ __all__ = [
     "build_raw_github_url",
     "build_raw_gitlab_url",
     "is_likely_url",
+    "is_text_file",
     "maybe_markdown",
 ]
