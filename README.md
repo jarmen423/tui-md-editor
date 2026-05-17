@@ -22,6 +22,8 @@ It keeps all of Frogmouth's excellent navigation, history, bookmarks, and scroll
 - **Status bar** — Shows filename, dirty state, file type, cursor position, and word count
 - **Markdown formatting shortcuts** — `Ctrl+B` bold, `Ctrl+I` italic, `Ctrl+K` code, `Ctrl+Shift+L` bullets, `Ctrl+Shift+O` numbered lists, `Ctrl+1..6` headers
 - **Auto-save** — Optional automatic saving every 30 seconds
+- **Starts in CWD** — Launch without a file and the sidebar opens to your current directory
+- **Fuzzy file search** — Type in the omnibox and a dropdown of matching files appears after a brief pause
 - **Export to HTML** — `:export html <path>` exports rendered markdown
 
 ## Installation
@@ -57,6 +59,7 @@ tui-md-editor ~/notes.md
 | `Ctrl+B` | Show bookmarks |
 | `Ctrl+Y` | Show history |
 | `Ctrl+L` | Show local files |
+| `Ctrl+Shift+E` | Show file explorer sidebar |
 | `Ctrl+T` | Show table of contents |
 | `F1` | Help |
 | `F2` | About |
@@ -94,8 +97,8 @@ This is a fork of Frogmouth with the following modifications:
 
 - `src/tui_md_editor/widgets/viewer.py` — Added `TextArea` editor inside a `ContentSwitcher`, plus `toggle_edit()`, `save_file()`, `toggle_split()`, `find_text()`, `new_file()`, syntax highlighting, auto-save, and markdown formatting shortcuts
 - `src/tui_md_editor/widgets/status_bar.py` — New status bar showing file info, cursor position, and word count
-- `src/tui_md_editor/widgets/omnibox.py` — Added `new` and `export` commands, plus creation of non-existent paths
-- `src/tui_md_editor/screens/main.py` — Added keybindings and actions for find, go-to-line, word wrap, split view, and status bar updates
+- `src/tui_md_editor/widgets/omnibox.py` — Added `new` and `export` commands, creation of non-existent paths, and fuzzy file suggestion dropdown
+- `src/tui_md_editor/screens/main.py` — Added keybindings and actions for find, go-to-line, word wrap, split view, status bar updates, `Ctrl+Shift+E` shortcut, and CWD startup behavior
 - `src/tui_md_editor/utility/type_tests.py` — Added `is_text_file()` and `language_for_path()` for editing any text file
 - `src/tui_md_editor/data/config.py` — Added `auto_save` and `auto_save_interval` options
 - `src/tui_md_editor/dialogs/find_dialog.py` — New modal find dialog

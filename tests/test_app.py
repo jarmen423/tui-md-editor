@@ -5,7 +5,7 @@ the application without requiring a real terminal.
 
 Run with pytest from the project root:
 
-    .venv-tui-md-editor\Scripts\pytest tests/
+    .venv-tui-md-editor\\Scripts\\pytest tests/
 
 Key Technologies/APIs:
     - :meth:`textual.app.App.run_test`
@@ -24,18 +24,24 @@ import pytest
 
 from tui_md_editor.app.app import MarkdownViewer
 from tui_md_editor.screens.main import Main
+from tui_md_editor.widgets.omnibox import Omnibox
+from textual.widgets import OptionList
 
 
 @pytest.fixture(autouse=True)
 def no_persisted_history() -> None:
-    """Prevent all tests from loading stale history from disk.
+    """Prevent tests from reading or writing real history on disk.
 
-    The app persists browsing history between sessions. If a previous run
-    opened a temp file that no longer exists, the app shows an error dialog
-    on startup, breaking headless tests. This fixture monkeypatches
-    ``load_history`` to always return an empty list.
+    The app persists browsing history between sessions. Tests that visit
+    temp files would otherwise pollute the user's real history file, causing
+    the app to open with missing files on the next real run. This fixture
+    monkeypatches both ``load_history`` and ``save_history`` in the main
+    screen to isolate tests.
     """
-    with patch("tui_md_editor.screens.main.load_history", return_value=[]):
+    with (
+        patch("tui_md_editor.screens.main.load_history", return_value=[]),
+        patch("tui_md_editor.screens.main.save_history"),
+    ):
         yield
 
 
@@ -491,3 +497,84 @@ class TestWordWrap:
             assert viewer.editor.soft_wrap is not initial
             viewer.toggle_wrap()
             assert viewer.editor.soft_wrap is initial
+
+
+class TestOmniboxDropdown:
+    """Tests for the omnibox file suggestion dropdown."""
+
+    @pytest.mark.asyncio
+    async def test_dropdown_shows_file_suggestions(self, tmp_path: Path) -> None:
+        """Typing in the omnibox shows a dropdown of matching files."""
+        test_file = tmp_path / "notes.md"
+        test_file.write_text("# Hello", encoding="utf-8")
+
+        app = MarkdownViewer(SimpleNamespace(file=[]))
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.pause()
+            screen = app.screen
+            omnibox = screen.query_one(Omnibox)
+            dropdown = screen.query_one("#omnibox_dropdown", OptionList)
+
+            # Focus the omnibox and type a query that should match the file.
+            omnibox.focus()
+            omnibox.value = str(tmp_path / "note")
+            await pilot.pause()
+            # Wait for the debounce timer to fire.
+            import asyncio
+            await asyncio.sleep(0.5)
+            await pilot.pause()
+
+            assert dropdown.display is True
+            assert dropdown.option_count > 0
+
+    @pytest.mark.asyncio
+    async def test_dropdown_hides_on_escape(self, tmp_path: Path) -> None:
+        """Pressing Escape hides the file suggestion dropdown."""
+        test_file = tmp_path / "hide.md"
+        test_file.write_text("# Hide", encoding="utf-8")
+
+        app = MarkdownViewer(SimpleNamespace(file=[]))
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.pause()
+            screen = app.screen
+            omnibox = screen.query_one(Omnibox)
+            dropdown = screen.query_one("#omnibox_dropdown", OptionList)
+
+            omnibox.focus()
+            omnibox.value = str(tmp_path / "hid")
+            await pilot.pause()
+            import asyncio
+            await asyncio.sleep(0.5)
+            await pilot.pause()
+
+            assert dropdown.display is True
+
+            await pilot.press("escape")
+            await pilot.pause()
+
+            assert dropdown.display is False
+
+
+class TestFileExplorerShortcut:
+    """Tests for the file explorer sidebar shortcut."""
+
+    @pytest.mark.asyncio
+    async def test_ctrl_shift_e_toggles_local_files(self) -> None:
+        """Ctrl+Shift+E toggles the navigation sidebar focused on Local Files."""
+        # Start with a file so the sidebar is not auto-opened.
+        app = MarkdownViewer(SimpleNamespace(file=["README.md"]))
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.pause()
+            await pilot.pause()
+            screen = app.screen
+            navigation = screen.query_one("Navigation")
+
+            assert not navigation.popped_out
+
+            await pilot.press("ctrl+shift+e")
+            await pilot.pause()
+
+            assert navigation.popped_out is True

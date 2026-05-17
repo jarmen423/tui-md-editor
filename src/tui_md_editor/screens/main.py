@@ -10,10 +10,10 @@ from webbrowser import open as open_url
 from httpx import URL
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal
-from textual.events import Paste
+from textual.containers import Horizontal, Vertical
+from textual.events import Key, Paste
 from textual.screen import Screen
-from textual.widgets import Footer, Markdown
+from textual.widgets import Footer, Markdown, OptionList
 
 from .. import __version__
 from ..data import load_config, load_history, save_config, save_history
@@ -51,6 +51,32 @@ class Main(Screen[None]):  # pylint:disable=too-many-public-methods
         border: heavy $accent !important;
     }
 
+    #omnibox_container {
+        dock: top;
+        height: auto;
+    }
+
+    Omnibox {
+        height: 3;
+        padding: 0;
+    }
+
+    #omnibox_dropdown {
+        height: auto;
+        max-height: 12;
+        display: none;
+        background: $surface;
+        border: solid $primary;
+    }
+
+    #omnibox_dropdown:focus {
+        border: solid $accent;
+    }
+
+    #omnibox_dropdown > .option-list--option-highlighted {
+        background: $accent 50%;
+        color: $text;
+    }
 
     Screen Tabs {
         border: blank;
@@ -78,6 +104,7 @@ class Main(Screen[None]):  # pylint:disable=too-many-public-methods
         Binding("ctrl+b", "bookmarks", "", show=False),
         Binding("ctrl+d", "bookmark_this", "", show=False),
         Binding("ctrl+l", "local_files", "", show=False),
+        Binding("ctrl+shift+e", "local_files", "Explorer"),
         Binding("ctrl+left", "backward", "", show=False),
         Binding("ctrl+right", "forward", "", show=False),
         Binding("ctrl+r", "reload", "", show=False),
@@ -114,7 +141,9 @@ class Main(Screen[None]):  # pylint:disable=too-many-public-methods
         Returns:
             The result of composing the screen.
         """
-        yield Omnibox(classes="focusable")
+        with Vertical(id="omnibox_container"):
+            yield Omnibox(classes="focusable")
+            yield OptionList(id="omnibox_dropdown")
         with Horizontal():
             yield Navigation()
             yield Viewer(classes="focusable", id="viewer")
@@ -184,6 +213,10 @@ class Main(Screen[None]):  # pylint:disable=too-many-public-methods
             # at that.
             (omnibox := self.query_one(Omnibox)).value = self._initial_location
             await omnibox.action_submit()
+        else:
+            # No initial location and no history: open the local files
+            # sidebar focused on the current working directory.
+            self.query_one(Navigation).jump_to_local_files(Path.cwd())
 
     def on_navigation_hidden(self) -> None:
         """React to the navigation sidebar being hidden."""
@@ -290,6 +323,51 @@ class Main(Screen[None]):  # pylint:disable=too-many-public-methods
             self.app.push_screen(
                 ErrorDialog("Export failed", f"{event.target}\n\n{error}.")
             )
+
+    def on_omnibox_show_file_suggestions(
+        self, event: Omnibox.ShowFileSuggestions
+    ) -> None:
+        """Handle a request to show file suggestions in the dropdown.
+
+        Args:
+            event: The show file suggestions event.
+        """
+        dropdown = self.query_one("#omnibox_dropdown", OptionList)
+        dropdown.clear_options()
+        for path in event.paths:
+            dropdown.add_option(str(path))
+        dropdown.display = True
+
+    def on_omnibox_hide_file_suggestions(self) -> None:
+        """Handle a request to hide the file suggestions dropdown."""
+        dropdown = self.query_one("#omnibox_dropdown", OptionList)
+        dropdown.display = False
+
+    def on_option_list_option_selected(
+        self, event: OptionList.OptionSelected
+    ) -> None:
+        """Handle a file being selected from the omnibox dropdown.
+
+        Args:
+            event: The option selected event.
+        """
+        if event.option_list.id == "omnibox_dropdown":
+            path_str = event.option_list.get_option_at_index(event.index).prompt
+            self.visit(Path(path_str))
+            event.option_list.display = False
+
+    def on_key(self, event: Key) -> None:
+        """Handle key events, including Escape in the dropdown.
+
+        Args:
+            event: The key event to handle.
+        """
+        if event.key == "escape":
+            dropdown = self.query_one("#omnibox_dropdown", OptionList)
+            if dropdown.display:
+                dropdown.display = False
+                self.query_one(Omnibox).focus()
+                event.stop()
 
     def on_omnibox_local_chdir_command(self, event: Omnibox.LocalChdirCommand) -> None:
         """Handle being asked to view a new directory in the local files picker.

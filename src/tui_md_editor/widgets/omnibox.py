@@ -8,9 +8,11 @@ from typing import Type
 from webbrowser import open as open_url
 
 from httpx import URL
+from textual.command import Matcher
+from textual.events import Key
 from textual.message import Message
 from textual.reactive import var
-from textual.widgets import Input
+from textual.widgets import Input, OptionList
 
 from ..utility import is_likely_url
 from ..utility.advertising import DISCORD, ORGANISATION_NAME, PACKAGE_NAME
@@ -167,6 +169,152 @@ class Omnibox(Input):
             super().__init__()
             self.target = target
             """The target file path."""
+
+    class ShowFileSuggestions(Message):
+        """Show file suggestions in the dropdown."""
+
+        def __init__(self, paths: list[Path]) -> None:
+            """Initialise the show suggestions command.
+
+            Args:
+                paths: The paths to suggest.
+            """
+            super().__init__()
+            self.paths = paths
+            """The paths to suggest."""
+
+    class HideFileSuggestions(Message):
+        """Hide the file suggestions dropdown."""
+
+    _DEBOUNCE_DELAY: float = 0.3
+    """Delay in seconds before showing file suggestions."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        """Initialise the omnibox with a debounce timer."""
+        super().__init__(*args, **kwargs)
+        self._debounce_timer = None
+        """The current debounce timer."""
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Handle input changes with debounced file suggestion.
+
+        Args:
+            event: The input changed event.
+        """
+        # Cancel any pending debounce timer.
+        if self._debounce_timer is not None:
+            self._debounce_timer.stop()
+            self._debounce_timer = None
+
+        # Hide the dropdown immediately on any change.
+        self.post_message(self.HideFileSuggestions())
+
+        query = self.value.strip()
+        if query and not is_likely_url(query) and not self._is_command(query.lower()):
+            self._debounce_timer = self.set_timer(
+                self._DEBOUNCE_DELAY, lambda: self._show_suggestions(query)
+            )
+
+    def _show_suggestions(self, query: str) -> None:
+        """Show file suggestions for the given query.
+
+        Args:
+            query: The current input value.
+        """
+        paths = self._get_file_suggestions(query)
+        if paths:
+            self.post_message(self.ShowFileSuggestions(paths))
+        else:
+            self.post_message(self.HideFileSuggestions())
+
+    def _get_file_suggestions(self, query: str) -> list[Path]:
+        """Get matching file paths for the dropdown.
+
+        Args:
+            query: The user's input query.
+
+        Returns:
+            A list of up to 15 matching file paths.
+        """
+        if not query or is_likely_url(query) or self._is_command(query.lower()):
+            return []
+
+        path = Path(query).expanduser()
+
+        # If the query ends with a path separator, list directory contents.
+        if query.endswith(("/", "\\")):
+            dir_path = path if path.exists() and path.is_dir() else path.parent
+            if dir_path.exists() and dir_path.is_dir():
+                return sorted(
+                    [p for p in dir_path.iterdir() if not p.name.startswith(".")]
+                )[:15]
+            return []
+
+        # Determine search directory and filename pattern.
+        if "/" in query or "\\" in query:
+            search_dir = path.parent
+            filename = path.name
+        else:
+            search_dir = Path.cwd()
+            filename = query
+
+        if not search_dir.exists() or not search_dir.is_dir():
+            return []
+
+        matcher = Matcher(filename)
+        matches: list[tuple[float, Path]] = []
+
+        # Search the current directory.
+        for p in search_dir.iterdir():
+            if p.name.startswith("."):
+                continue
+            score = matcher.match(p.name)
+            if score > 0:
+                matches.append((score, p))
+
+        # Search one level deep into subdirectories.
+        for p in search_dir.iterdir():
+            if p.name.startswith(".") or not p.is_dir():
+                continue
+            try:
+                for child in p.iterdir():
+                    if child.name.startswith("."):
+                        continue
+                    score = matcher.match(child.name)
+                    if score > 0:
+                        matches.append((score, child))
+            except (PermissionError, OSError):
+                continue
+
+        matches.sort(key=lambda x: x[0], reverse=True)
+        return [p for _, p in matches[:15]]
+
+    def _on_key(self, event: Key) -> None:
+        """Handle key events for dropdown navigation.
+
+        Args:
+            event: The key event to handle.
+        """
+        if event.key == "down":
+            try:
+                dropdown = self.screen.query_one("#omnibox_dropdown", OptionList)
+                if dropdown.display and dropdown.option_count > 0:
+                    dropdown.focus()
+                    dropdown.highlighted = 0
+                    event.stop()
+                    return
+            except Exception:
+                pass
+        if event.key == "escape":
+            try:
+                dropdown = self.screen.query_one("#omnibox_dropdown", OptionList)
+                if dropdown.display:
+                    dropdown.display = False
+                    event.stop()
+                    return
+            except Exception:
+                pass
+        super()._on_key(event)
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle the user submitting the input.
