@@ -18,6 +18,7 @@ from .navigation_panes.history import History
 from .navigation_panes.local_files import LocalFiles
 from .navigation_panes.navigation_pane import NavigationPane
 from .navigation_panes.table_of_contents import TableOfContents
+from .resize_handle import ResizeHandle
 
 
 class Navigation(Vertical, can_focus=False, can_focus_children=True):
@@ -71,6 +72,7 @@ class Navigation(Vertical, can_focus=False, can_focus_children=True):
             yield self._local_files
             yield self._bookmarks
             yield self._history
+        yield ResizeHandle()
 
     def on_mount(self) -> None:
         """Configure navigation once the DOM is set up."""
@@ -92,6 +94,9 @@ class Navigation(Vertical, can_focus=False, can_focus_children=True):
     def watch_docked_left(self) -> None:
         """Watch for changes to the left-docking status."""
         self.styles.dock = "left" if self.docked_left else "right"
+        # Move the resize handle to the inner edge of the sidebar.
+        if handle := self.query_one(ResizeHandle):
+            handle.styles.dock = "right" if self.docked_left else "left"
 
     @property
     def table_of_contents(self) -> TableOfContents:
