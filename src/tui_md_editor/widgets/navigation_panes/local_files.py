@@ -7,39 +7,53 @@ from typing import Iterable
 
 from httpx import URL
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.message import Message
+from textual.reactive import var
 from textual.widgets import DirectoryTree
 
-from ...utility import maybe_markdown
 from .navigation_pane import NavigationPane
 
 
 class FilteredDirectoryTree(DirectoryTree):  # pylint:disable=too-many-ancestors
     """A `DirectoryTree` filtered for the markdown viewer."""
 
+    BINDINGS = [
+        Binding("H", "toggle_hidden", "Toggle hidden files"),
+    ]
+
+    show_hidden: var[bool] = var(False)
+    """Should hidden files be shown in the directory tree?"""
+
     def filter_paths(self, paths: Iterable[Path]) -> Iterable[Path]:
-        """Filter the directory tree for the Markdown viewer.
+        """Filter the directory tree for the editor.
 
         Args:
             paths: The paths to be filtered.
 
         Returns:
-            The parts filtered for the Markdown viewer.
-
-        The filtered set will include all filesystem entries that aren't
-        hidden (in a Unix sense of hidden) which are either a directory or a
-        file that looks like it could be a Markdown document.
+            All non-hidden files and directories (or all files if
+            ``show_hidden`` is ``True``).
         """
         try:
+            if self.show_hidden:
+                return list(paths)
             return [
                 path
                 for path in paths
                 if not path.name.startswith(".")
-                and path.is_dir()
-                or (path.is_file() and maybe_markdown(path))
             ]
         except PermissionError:
             return []
+
+    def watch_show_hidden(self) -> None:
+        """Reload the tree when the hidden-files toggle changes."""
+        # Trigger the path watcher which properly reloads the tree.
+        self.path = self.path
+
+    def action_toggle_hidden(self) -> None:
+        """Toggle the visibility of hidden files."""
+        self.show_hidden = not self.show_hidden
 
 
 class LocalFiles(NavigationPane):
@@ -67,7 +81,7 @@ class LocalFiles(NavigationPane):
 
     def compose(self) -> ComposeResult:
         """Compose the child widgets."""
-        yield FilteredDirectoryTree(Path("~").expanduser())
+        yield FilteredDirectoryTree(Path.cwd())
 
     def chdir(self, path: Path) -> None:
         """Change the filesystem view to the given directory.
