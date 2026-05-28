@@ -214,9 +214,8 @@ class Main(Screen[None]):  # pylint:disable=too-many-public-methods
             (omnibox := self.query_one(Omnibox)).value = self._initial_location
             await omnibox.action_submit()
         else:
-            # No initial location and no history: open the local files
-            # sidebar focused on the current working directory.
-            self.query_one(Navigation).jump_to_local_files(Path.cwd())
+            # No initial location and no history: just focus the viewer.
+            self.query_one(Viewer).focus()
 
     def on_navigation_hidden(self) -> None:
         """React to the navigation sidebar being hidden."""
