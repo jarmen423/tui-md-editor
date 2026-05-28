@@ -535,8 +535,15 @@ class Omnibox(Input):
         """
         self._forge_quick_look(self.BitBucketCommand, tail)
 
+    class FormatCommand(Message):
+        """The format document command."""
+
     class CodebergCommand(ForgeCommand):
         """The Codeberg quick load command."""
+
+    def command_format(self, _: str) -> None:
+        """The format document command."""
+        self.post_message(self.FormatCommand())
 
     def command_codeberg(self, tail: str) -> None:
         """The Codeberg command.

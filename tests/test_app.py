@@ -25,6 +25,7 @@ import pytest
 from tui_md_editor.app.app import MarkdownViewer
 from tui_md_editor.screens.main import Main
 from tui_md_editor.widgets.omnibox import Omnibox
+from tui_md_editor.widgets.viewer import Viewer
 from textual.widgets import OptionList
 
 
@@ -578,3 +579,61 @@ class TestFileExplorerShortcut:
             await pilot.pause()
 
             assert navigation.popped_out is True
+
+
+class TestFormatDocument:
+    """Tests for the format document feature."""
+
+    @pytest.mark.asyncio
+    async def test_json_auto_formatted_on_open(self, tmp_path: Path) -> None:
+        """Minified JSON files are auto-formatted when opened."""
+        json_file = tmp_path / "data.json"
+        json_file.write_text('{"name":"test","items":[1,2,3]}', encoding="utf-8")
+
+        app = MarkdownViewer(SimpleNamespace(file=[str(json_file)]))
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.pause()
+            await pilot.pause()
+            screen = app.screen
+            viewer = screen.query_one(Viewer)
+
+            # Toggle into edit mode.
+            await pilot.press("ctrl+e")
+            await pilot.pause()
+
+            expected = '{\n  "name": "test",\n  "items": [\n    1,\n    2,\n    3\n  ]\n}'
+            assert viewer.editor.text == expected
+            # Auto-format should not mark the file as dirty.
+            assert viewer.is_dirty is False
+
+    @pytest.mark.asyncio
+    async def test_format_json_invalid(self, tmp_path: Path) -> None:
+        """Invalid JSON is left as-is on open; manual format shows an error."""
+        json_file = tmp_path / "bad.json"
+        json_file.write_text("{not json}", encoding="utf-8")
+
+        app = MarkdownViewer(SimpleNamespace(file=[str(json_file)]))
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.pause()
+            await pilot.pause()
+            screen = app.screen
+            viewer = screen.query_one(Viewer)
+
+            await pilot.press("ctrl+e")
+            await pilot.pause()
+
+            # Invalid JSON should be left unchanged on open.
+            assert viewer.editor.text == "{not json}"
+            assert viewer.is_dirty is False
+
+            # Manual format via omnibox should also fail gracefully.
+            omnibox = screen.query_one(Omnibox)
+            omnibox.focus()
+            omnibox.value = ":format"
+            await pilot.press("enter")
+            await pilot.pause()
+
+            # Text should still be unchanged.
+            assert viewer.editor.text == "{not json}"

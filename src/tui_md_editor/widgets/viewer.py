@@ -14,6 +14,7 @@ Key Technologies/APIs:
 
 from __future__ import annotations
 
+import json
 from collections import deque
 from pathlib import Path
 from typing import Callable
@@ -492,9 +493,21 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
             raw = location.read_text(encoding="utf-8")
             self._raw_content = raw
             self._is_dirty = False
+
+            # Auto-format minified JSON files on open.
+            lang = language_for_path(location)
+            if lang == "json":
+                try:
+                    parsed = json.loads(raw)
+                    formatted = json.dumps(parsed, indent=2)
+                    if formatted != raw:
+                        raw = formatted
+                        self._raw_content = formatted
+                except json.JSONDecodeError:
+                    pass  # Leave invalid JSON as-is.
+
             self.editor.text = raw
             self.is_plain_text = not maybe_markdown(location)
-            lang = language_for_path(location)
             self.editor.language = lang
             self.editor.is_markdown_file = not self.is_plain_text
             if self.is_plain_text:
@@ -813,6 +826,46 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
                 self.find_text(term, forward)
 
         self.app.push_screen(FindDialog(), on_result)
+
+    def format_document(self) -> None:
+        """Format the current document based on its language.
+
+        Currently supports JSON. Notifies the user if no formatter is
+        available or if formatting fails.
+        """
+        if not self.edit_mode and not self.split_mode:
+            self.toggle_edit()
+
+        target = self.split_editor if self.split_mode else self.editor
+        text = target.text
+        language = target.language
+
+        if language == "json":
+            try:
+                parsed = json.loads(text)
+                formatted = json.dumps(parsed, indent=2)
+            except json.JSONDecodeError as error:
+                self.app.notify(f"JSON parse error: {error}", severity="error", timeout=3)
+                return
+        else:
+            self.app.notify(
+                f"No formatter available for {language or 'plain text'}.",
+                severity="warning",
+                timeout=2,
+            )
+            return
+
+        if formatted != text:
+            target.text = formatted
+            # Sync the other editor if needed.
+            if self.split_mode:
+                self.editor.text = formatted
+                self.split_markdown.update(formatted)
+            else:
+                self.document.update(formatted)
+            self.app.notify("Formatted.", severity="information", timeout=1)
+        else:
+            self.app.notify("Already formatted.", severity="information", timeout=1)
 
     def toggle_wrap(self) -> None:
         """Toggle soft word wrap in the editor."""

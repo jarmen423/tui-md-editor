@@ -461,6 +461,10 @@ class Main(Screen[None]):  # pylint:disable=too-many-public-methods
         """Handle being asked to quit."""
         self.app.exit()
 
+    def on_omnibox_format_command(self) -> None:
+        """Handle being asked to format the current document."""
+        self.query_one(Viewer).format_document()
+
     def on_local_files_goto(self, event: LocalFiles.Goto) -> None:
         """Visit a local file in the viewer.
 
@@ -798,6 +802,10 @@ class Main(Screen[None]):  # pylint:disable=too-many-public-methods
     def action_toggle_wrap(self) -> None:
         """Toggle word wrap in the editor (``Alt+Z``)."""
         self.query_one(Viewer).toggle_wrap()
+
+    def action_format_document(self) -> None:
+        """Format the current document (``Ctrl+Shift+I``)."""
+        self.query_one(Viewer).format_document()
 
     def action_toggle_split(self) -> None:
         """Toggle split view (``Ctrl+Backslash``)."""
