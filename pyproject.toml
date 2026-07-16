@@ -9,7 +9,7 @@ description = "A TUI markdown editor built with Textual (forked from Frogmouth)"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
-    "textual==0.53.1",
+    "textual>=8.0.0,<9",
     "httpx>=0.24.0",
     "markdown-it-py>=2.0.0",
     "mdit-py-plugins>=0.4.0",

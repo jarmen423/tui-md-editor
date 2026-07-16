@@ -762,8 +762,9 @@ class Main(Screen[None]):  # pylint:disable=too-many-public-methods
         config = load_config()
         config.light_mode = not config.light_mode
         save_config(config)
-        # pylint:disable=attribute-defined-outside-init
-        self.app.dark = not config.light_mode
+        self.app.theme = (
+            "textual-light" if config.light_mode else "textual-dark"
+        )
 
     def action_reload(self) -> None:
         """Reload the current document."""

@@ -8,6 +8,7 @@ It keeps all of Frogmouth's excellent navigation, history, bookmarks, and scroll
 
 - **Full Frogmouth navigation** — Omnibox address bar, sidebar with bookmarks/history/local files/table of contents
 - **Scrollable Markdown preview** — Proper scrolling with table of contents, link navigation, and history
+- **Select and copy in preview** — Click-drag to highlight text in readonly preview; `Ctrl+C` copies to the clipboard
 - **Edit mode** — Press `Ctrl+E` to switch from preview to a syntax-highlighted TextArea editor
 - **Save** — Press `Ctrl+S` to write changes back to disk
 - **Dirty tracking** — Know when you have unsaved changes
@@ -75,6 +76,8 @@ tui-md-editor ~/notes.md
 | `Ctrl+G` | Go to line number |
 | `Alt+Z` | Toggle word wrap |
 | `Ctrl+\` | Toggle split view (editor + preview side-by-side) |
+| Click-drag | Select text in preview or editor |
+| `Ctrl+C` | Copy selection to the clipboard |
 | `Ctrl+B` | **Bold** selection (markdown files, edit mode) |
 | `Ctrl+I` | *Italic* selection (markdown files, edit mode) |
 | `Ctrl+K` | `Code` selection (markdown files, edit mode) |

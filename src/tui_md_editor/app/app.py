@@ -19,6 +19,8 @@ class MarkdownViewer(App[None]):
     """The main title for the application."""
 
     ENABLE_COMMAND_PALETTE = False
+    # Native click-drag text selection (preview Markdown, Static, etc.).
+    ALLOW_SELECT = True
 
     def __init__(self, cli_args: Namespace) -> None:
         """Initialise the application.
@@ -28,7 +30,10 @@ class MarkdownViewer(App[None]):
         """
         super().__init__()
         self._args = cli_args
-        self.dark = not load_config().light_mode
+        # Textual 1.0+ uses named themes instead of App.dark.
+        self.theme = (
+            "textual-light" if load_config().light_mode else "textual-dark"
+        )
 
     def on_mount(self) -> None:
         """Set up the application after the DOM is ready."""

@@ -64,6 +64,16 @@ Welcome to {APPLICATION_TITLE} Help!
 | `Ctrl+shift+o` | Insert numbered list (edit mode, markdown files) |
 | `Ctrl+1` … `Ctrl+6` | Insert H1 … H6 (edit mode, markdown files) |
 
+## Selecting and copying text
+
+| Action | How |
+| -- | -- |
+| Select text | Click and drag in preview or editor |
+| Copy selection | `Ctrl+c` (or `Cmd+c` where supported) |
+| Select word / block | Double-click / triple-click |
+
+Works in the readonly Markdown preview as well as in edit mode.
+
 ## Commands
 
 Press `/` or click the address bar, then enter any of the following commands:

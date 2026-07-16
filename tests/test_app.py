@@ -637,3 +637,51 @@ class TestFormatDocument:
 
             # Text should still be unchanged.
             assert viewer.editor.text == "{not json}"
+
+
+class TestPreviewSelectionAndTheme:
+    """Tests for Textual-native selection/copy and theme migration."""
+
+    @pytest.mark.asyncio
+    async def test_selection_enabled(self, app: MarkdownViewer) -> None:
+        """App allows native click-drag text selection (preview + elsewhere)."""
+        assert app.ALLOW_SELECT is True
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            # Screen exposes selection + copy used by Ctrl+C.
+            assert hasattr(app.screen, "get_selected_text")
+            assert hasattr(app.screen, "action_copy_text")
+            assert hasattr(app, "copy_to_clipboard")
+
+    @pytest.mark.asyncio
+    async def test_copy_to_clipboard_stores_text(self, app: MarkdownViewer) -> None:
+        """copy_to_clipboard updates the app clipboard (OSC 52 in real terminals)."""
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.copy_to_clipboard("preview selection sample")
+            assert app.clipboard == "preview selection sample"
+
+    @pytest.mark.asyncio
+    async def test_theme_toggle_uses_named_themes(self, app: MarkdownViewer) -> None:
+        """F10 toggles between textual-dark and textual-light (App.dark removed)."""
+        from tui_md_editor.data.config import Config
+
+        config = Config(light_mode=False)
+        with (
+            patch("tui_md_editor.screens.main.load_config", return_value=config),
+            patch("tui_md_editor.screens.main.save_config"),
+        ):
+            async with app.run_test() as pilot:
+                await pilot.pause()
+                await pilot.pause()
+                assert app.theme == "textual-dark"
+
+                await pilot.press("f10")
+                await pilot.pause()
+                assert app.theme == "textual-light"
+                assert config.light_mode is True
+
+                await pilot.press("f10")
+                await pilot.pause()
+                assert app.theme == "textual-dark"
+                assert config.light_mode is False

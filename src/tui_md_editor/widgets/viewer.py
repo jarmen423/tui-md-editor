@@ -53,6 +53,8 @@ def _welcome_text() -> str:
         "| `/` or `:` | Focus the omnibox |",
         "| `Ctrl+E` | Toggle edit / preview |",
         "| `Ctrl+S` | Save changes |",
+        "| Click-drag | Select text in preview |",
+        "| `Ctrl+C` | Copy selection |",
         "| `Ctrl+F` | Find in file |",
         "| `Ctrl+G` | Go to line |",
         "| `Ctrl+N` | New file |",
