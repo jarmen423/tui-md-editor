@@ -35,6 +35,7 @@ from ..utility.advertising import (
     PACKAGE_NAME,
     TEXTUAL_URL,
 )
+from ..utility.preview_server import PreviewServer
 from ..widgets import Navigation, Omnibox, StatusBar, Viewer
 from ..widgets.navigation_panes import Bookmarks, History, LocalFiles
 
@@ -126,6 +127,9 @@ class Main(Screen[None]):  # pylint:disable=too-many-public-methods
     ]
     """The keyboard bindings for the main screen."""
 
+    _PREVIEW_DEBOUNCE: float = 0.3
+    """Delay in seconds before pushing edits to the browser preview."""
+
     def __init__(self, initial_location: str | None = None) -> None:
         """Initialise the main screen.
 
@@ -134,6 +138,10 @@ class Main(Screen[None]):  # pylint:disable=too-many-public-methods
         """
         super().__init__()
         self._initial_location = initial_location
+        self._preview_server: PreviewServer | None = None
+        """The live browser preview server, when running."""
+        self._preview_push_timer = None
+        """Pending debounced push to the browser preview."""
 
     def compose(self) -> ComposeResult:
         """Compose the main screen.
@@ -216,6 +224,12 @@ class Main(Screen[None]):  # pylint:disable=too-many-public-methods
         else:
             # No initial location and no history: just focus the viewer.
             self.query_one(Viewer).focus()
+
+    def on_unmount(self) -> None:
+        """Stop the browser preview server when the screen goes away."""
+        if self._preview_server is not None:
+            self._preview_server.stop()
+            self._preview_server = None
 
     def on_navigation_hidden(self) -> None:
         """React to the navigation sidebar being hidden."""
@@ -309,11 +323,18 @@ class Main(Screen[None]):  # pylint:disable=too-many-public-methods
             self.app.notify("Nothing to export.", severity="warning")
             return
         try:
-            from markdown_it import MarkdownIt
-            from mdit_py_plugins import front_matter
+            from ..utility.html_export import render_html_document
 
-            md = MarkdownIt("gfm-like").use(front_matter.front_matter_plugin)
-            html = md.render(raw)
+            location = viewer.location
+            if isinstance(location, Path):
+                title = location.stem
+            elif location is not None:
+                title = str(location)
+            else:
+                title = "Untitled"
+            html = render_html_document(
+                title, raw, dark=not load_config().light_mode
+            )
             event.target.write_text(html, encoding="utf-8")
             self.app.notify(
                 f"Exported to {event.target}", severity="information", timeout=2
@@ -322,6 +343,87 @@ class Main(Screen[None]):  # pylint:disable=too-many-public-methods
             self.app.push_screen(
                 ErrorDialog("Export failed", f"{event.target}\n\n{error}.")
             )
+
+    def _preview_text(self) -> str:
+        """Current editor text for the browser preview.
+
+        Returns:
+            The live buffer: the split editor in split mode, otherwise
+            the main editor.
+        """
+        viewer = self.query_one(Viewer)
+        if viewer.split_mode:
+            return viewer.split_editor.text
+        return viewer.editor.text
+
+    def _preview_title(self) -> str:
+        """Title for the browser preview page.
+
+        Returns:
+            The current file stem, URL, or ``"Untitled"``.
+        """
+        location = self.query_one(Viewer).location
+        if isinstance(location, Path):
+            return location.stem
+        if location is not None:
+            return str(location)
+        return "Untitled"
+
+    def _push_preview(self) -> None:
+        """Push the current buffer to the running browser preview, if any."""
+        if self._preview_server is not None:
+            self._preview_server.update(
+                self._preview_text(),
+                title=self._preview_title(),
+                dark=not load_config().light_mode,
+            )
+
+    def on_omnibox_preview_browser_command(self) -> None:
+        """Start the live browser preview and open it in a browser tab."""
+        if self._preview_server is not None:
+            self._push_preview()
+            open_url(self._preview_server.url)
+            self.app.notify(
+                f"Preview already running at {self._preview_server.url}",
+                severity="information",
+                timeout=4,
+            )
+            return
+        server = PreviewServer(
+            self._preview_title(),
+            self._preview_text(),
+            dark=not load_config().light_mode,
+        ).start()
+        self._preview_server = server
+        open_url(server.url)
+        self.app.notify(
+            f"Browser preview at {server.url}",
+            severity="information",
+            timeout=4,
+        )
+
+    def on_omnibox_preview_stop_command(self) -> None:
+        """Stop the live browser preview, if running."""
+        if self._preview_server is None:
+            self.app.notify(
+                "Browser preview is not running.", severity="warning"
+            )
+            return
+        self._preview_server.stop()
+        self._preview_server = None
+        self.app.notify(
+            "Browser preview stopped.", severity="information", timeout=2
+        )
+
+    def on_viewer_content_changed(self) -> None:
+        """Debounce editor changes into browser preview pushes."""
+        if self._preview_server is None:
+            return
+        if self._preview_push_timer is not None:
+            self._preview_push_timer.stop()
+        self._preview_push_timer = self.set_timer(
+            self._PREVIEW_DEBOUNCE, self._push_preview
+        )
 
     def on_omnibox_show_file_suggestions(
         self, event: Omnibox.ShowFileSuggestions
@@ -533,6 +635,8 @@ class Main(Screen[None]):  # pylint:disable=too-many-public-methods
         # Having safely arrived at a new location, that implies that we want
         # to focus on the viewer.
         viewer.focus()
+        # A new document also means new content for the browser preview.
+        self._push_preview()
 
     def on_viewer_edit_mode_changed(self, event: Viewer.EditModeChanged) -> None:
         """Update status bar when edit mode changes.
@@ -765,6 +869,8 @@ class Main(Screen[None]):  # pylint:disable=too-many-public-methods
         self.app.theme = (
             "textual-light" if config.light_mode else "textual-dark"
         )
+        # The preview palette follows the app theme.
+        self._push_preview()
 
     def action_reload(self) -> None:
         """Reload the current document."""

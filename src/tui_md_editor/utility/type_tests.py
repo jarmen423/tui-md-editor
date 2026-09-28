@@ -6,8 +6,6 @@ from typing import Any
 
 from httpx import URL
 
-from ..data.config import load_config
-
 # Extensions we treat as editable text files.
 _TEXT_EXTENSIONS: set[str] = {
     ".txt",
@@ -106,6 +104,10 @@ def maybe_markdown(resource: Any) -> bool:
 
 @maybe_markdown.register
 def _(resource: Path) -> bool:
+    # Imported lazily: data.bookmarks imports from this package, so a
+    # module-level import would be a circular import.
+    from ..data.config import load_config
+
     return resource.suffix.lower() in load_config().markdown_extensions
 
 

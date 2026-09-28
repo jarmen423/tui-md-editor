@@ -26,6 +26,7 @@ It keeps all of Frogmouth's excellent navigation, history, bookmarks, and scroll
 - **Starts in CWD** — Launch without a file and the sidebar opens to your current directory
 - **Fuzzy file search** — Type in the omnibox and a dropdown of matching files appears after a brief pause
 - **Export to HTML** — `:export html <path>` exports rendered markdown
+- **Live browser preview** — `:preview browser` opens a localhost tab that updates as you type (sans-serif); `:preview stop` closes it
 
 ## Installation
 
@@ -93,6 +94,8 @@ Press `/` then type any command:
 |---------|-------------|
 | `new` | Open a new untitled file |
 | `export html <path>` | Export current markdown to HTML |
+| `preview browser` | Open a live-updating browser preview (sans-serif) |
+| `preview stop` | Stop the live browser preview |
 
 ## Project Structure
 
@@ -101,6 +104,7 @@ This is a fork of Frogmouth with the following modifications:
 - `src/tui_md_editor/widgets/viewer.py` — Added `TextArea` editor inside a `ContentSwitcher`, plus `toggle_edit()`, `save_file()`, `toggle_split()`, `find_text()`, `new_file()`, syntax highlighting, auto-save, and markdown formatting shortcuts
 - `src/tui_md_editor/widgets/status_bar.py` — New status bar showing file info, cursor position, and word count
 - `src/tui_md_editor/widgets/omnibox.py` — Added `new` and `export` commands, creation of non-existent paths, and fuzzy file suggestion dropdown
+- `src/tui_md_editor/utility/preview_server.py` — Localhost-only live browser preview (`:preview browser` / `:preview stop`) with SSE push and scroll-preserving reload
 - `src/tui_md_editor/screens/main.py` — Added keybindings and actions for find, go-to-line, word wrap, split view, status bar updates, `Ctrl+Shift+E` shortcut, and CWD startup behavior
 - `src/tui_md_editor/utility/type_tests.py` — Added `is_text_file()` and `language_for_path()` for editing any text file
 - `src/tui_md_editor/data/config.py` — Added `auto_save` and `auto_save_interval` options

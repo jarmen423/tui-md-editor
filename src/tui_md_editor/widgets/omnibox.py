@@ -350,26 +350,22 @@ class Omnibox(Input):
                 # It's something that exists in the filesystem, but it's not
                 # a directory or a file. Let's nope on that for now.
                 return
-        elif (path := Path(submitted).expanduser().resolve()).parent.exists() or True:
-            # The path doesn't exist. If it looks like a directory request
-            # (trailing slash or backslash), offer to create it.
-            is_dir = submitted.rstrip().endswith(("/", "\\"))
-            self.post_message(self.CreatePathCommand(path, is_dir))
-            self.value = submitted
-        elif self._is_command(command := submitted.lower()):
+        elif self._is_command(command_text := submitted.lower()) or (
+            submitted.startswith(":")
+            and self._is_command(command_text := submitted[1:].lower())
+        ):
             # Having checked for URLs and existing filesystem things, it's
             # now safe to look for commands. Having got here, it is a match
-            # for a command so we handle it as such.
-            self._execute_command(command)
+            # for a command so we handle it as such. A single leading colon
+            # is accepted (``:preview browser``) as well as the bare command.
+            self._execute_command(command_text)
         else:
-            # Having got this far, the best thing to do now is assume that
-            # the user was attempting to enter a filename to view and got it
-            # wrong. So that they get some sort of feedback, let's attempt
-            # to view it anyway.
-            self.post_message(self.LocalViewCommand(Path(submitted)))
-            # Because it'll raise an error and the user may want to edit the
-            # input to get it right, we put the original input back in
-            # place.
+            # The path doesn't exist and it isn't a command. If it looks
+            # like a directory request (trailing slash or backslash), offer
+            # to create a directory, otherwise offer to create a file.
+            path = Path(submitted).expanduser().resolve()
+            is_dir = submitted.rstrip().endswith(("/", "\\"))
+            self.post_message(self.CreatePathCommand(path, is_dir))
             self.value = submitted
 
         # If we got a match above stop the event.
@@ -424,6 +420,26 @@ class Omnibox(Input):
         if len(parts) < 2 or parts[0].lower() != "html":
             return
         self.post_message(self.ExportHtmlCommand(Path(parts[1]).expanduser().resolve()))
+
+    class PreviewBrowserCommand(Message):
+        """Command to open a live browser preview of the current document."""
+
+    class PreviewStopCommand(Message):
+        """Command to stop the live browser preview."""
+
+    def command_preview(self, arguments: str) -> None:
+        """Open or stop the live browser preview.
+
+        Args:
+            arguments: ``browser`` (the default) to open the preview,
+                ``stop`` to close it.
+        """
+        action = arguments.strip().split(None, 1)
+        verb = action[0].lower() if action else "browser"
+        if verb in ("browser", "start", "open"):
+            self.post_message(self.PreviewBrowserCommand())
+        elif verb in ("stop", "close", "off"):
+            self.post_message(self.PreviewStopCommand())
 
     class AboutCommand(Message):
         """The about command."""

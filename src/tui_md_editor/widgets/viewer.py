@@ -282,6 +282,44 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
         padding: 0 1;
     }
 
+    /* Preview readability. Terminals render a fixed monospace cell grid
+       (Textual has no font switching), so use air, hierarchy, and
+       contrast instead of a proportional font to ease long-form reading.
+       Heading colors stay theme-driven; only weight and rhythm change. */
+    Viewer Markdown {
+        padding: 1 4 2 4;
+    }
+
+    Viewer MarkdownH1 {
+        text-style: bold underline;
+        margin: 1 0 2 0;
+    }
+
+    Viewer MarkdownH2 {
+        text-style: bold;
+        margin: 2 0 1 0;
+    }
+
+    Viewer MarkdownH3,
+    Viewer MarkdownH4,
+    Viewer MarkdownH5,
+    Viewer MarkdownH6 {
+        text-style: bold;
+    }
+
+    Viewer MarkdownBlock > .code_inline {
+        text-style: bold;
+    }
+
+    Viewer MarkdownFence {
+        border-left: heavy $primary 40%;
+        margin: 1 0 2 0;
+    }
+
+    Viewer MarkdownBlockQuote {
+        margin: 1 0 2 0;
+    }
+
     Viewer #split {
         width: 100%;
         height: 100%;
@@ -352,6 +390,9 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
 
     class CursorMoved(ViewerMessage):
         """Message sent when the editor cursor moves."""
+
+    class ContentChanged(ViewerMessage):
+        """Message sent when the editor text changes."""
 
     def compose(self) -> ComposeResult:
         """Compose the markdown viewer with embedded editor and split view."""
@@ -765,6 +806,7 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
         elif not self._is_dirty:
             self._is_dirty = True
         self.post_message(self.CursorMoved(self))
+        self.post_message(self.ContentChanged(self))
 
     @on(TextArea.Changed, "#split_editor")
     def on_split_editor_changed(self) -> None:
@@ -777,6 +819,7 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
         if self.split_mode:
             self.split_markdown.update(self.split_editor.text)
         self.post_message(self.CursorMoved(self))
+        self.post_message(self.ContentChanged(self))
 
     def on_text_area_selection_changed(self) -> None:
         """Notify that the cursor has moved."""
