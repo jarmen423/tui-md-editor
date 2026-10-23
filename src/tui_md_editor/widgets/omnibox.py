@@ -210,6 +210,10 @@ class Omnibox(Input):
         self.post_message(self.HideFileSuggestions())
 
         query = self.value.strip()
+        # A value that matches the location being visited was set by the
+        # app, not typed by the user, so there's nothing to suggest.
+        if query == self.visiting:
+            return
         if query and not is_likely_url(query) and not self._is_command(query.lower()):
             self._debounce_timer = self.set_timer(
                 self._DEBOUNCE_DELAY, lambda: self._show_suggestions(query)
@@ -221,7 +225,13 @@ class Omnibox(Input):
         Args:
             query: The current input value.
         """
-        paths = self._get_file_suggestions(query)
+        # Don't suggest the exact file that's already in the box.
+        current = Path(query).expanduser().resolve()
+        paths = [
+            path
+            for path in self._get_file_suggestions(query)
+            if path.resolve() != current
+        ]
         if paths:
             self.post_message(self.ShowFileSuggestions(paths))
         else:

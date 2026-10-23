@@ -557,6 +557,47 @@ class TestOmniboxDropdown:
 
             assert dropdown.display is False
 
+    @pytest.mark.asyncio
+    async def test_opening_file_does_not_show_dropdown(self, tmp_path: Path) -> None:
+        """Opening a file fills the omnibox without popping the dropdown."""
+        import asyncio
+
+        test_file = tmp_path / "opened.md"
+        test_file.write_text("# Opened", encoding="utf-8")
+
+        app = MarkdownViewer(SimpleNamespace(file=[str(test_file)]))
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.pause()
+            # Wait past the suggestion debounce.
+            await asyncio.sleep(0.5)
+            await pilot.pause()
+            screen = app.screen
+            dropdown = screen.query_one("#omnibox_dropdown", OptionList)
+
+            assert screen.query_one(Omnibox).value == str(test_file)
+            assert dropdown.display is False
+
+
+class TestPreviewShortcut:
+    """Tests for the browser preview shortcut."""
+
+    @pytest.mark.asyncio
+    async def test_ctrl_p_opens_browser_preview(self) -> None:
+        """Ctrl+P starts the browser preview."""
+        app = MarkdownViewer(SimpleNamespace(file=[]))
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.pause()
+            screen = app.screen
+            with patch.object(
+                Main, "on_omnibox_preview_browser_command"
+            ) as preview:
+                await pilot.press("ctrl+p")
+                await pilot.pause()
+
+            preview.assert_called_once()
+
 
 class TestFileExplorerShortcut:
     """Tests for the file explorer sidebar shortcut."""

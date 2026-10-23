@@ -36,6 +36,7 @@ from ..utility.advertising import (
     TEXTUAL_URL,
 )
 from ..utility.preview_server import PreviewServer
+from ..utility.typeset import renderer as typeset_renderer
 from ..widgets import Navigation, Omnibox, StatusBar, Viewer
 from ..widgets.navigation_panes import Bookmarks, History, LocalFiles
 
@@ -101,6 +102,9 @@ class Main(Screen[None]):  # pylint:disable=too-many-public-methods
     """
 
     BINDINGS = [
+        # Listed first so the preview keys lead the footer.
+        Binding("alt+p", "toggle_typeset", "Typeset", priority=True),
+        Binding("ctrl+p", "preview_browser", "Preview", priority=True),
         Binding("/,:", "omnibox", "Omnibox", show=False),
         Binding("ctrl+b", "bookmarks", "", show=False),
         Binding("ctrl+d", "bookmark_this", "", show=False),
@@ -225,11 +229,12 @@ class Main(Screen[None]):  # pylint:disable=too-many-public-methods
             # No initial location and no history: just focus the viewer.
             self.query_one(Viewer).focus()
 
-    def on_unmount(self) -> None:
-        """Stop the browser preview server when the screen goes away."""
+    async def on_unmount(self) -> None:
+        """Stop the browser preview server and typesetter when the screen goes away."""
         if self._preview_server is not None:
             self._preview_server.stop()
             self._preview_server = None
+        await typeset_renderer.shutdown()
 
     def on_navigation_hidden(self) -> None:
         """React to the navigation sidebar being hidden."""
@@ -913,6 +918,14 @@ class Main(Screen[None]):  # pylint:disable=too-many-public-methods
     def action_format_document(self) -> None:
         """Format the current document (``Ctrl+Shift+I``)."""
         self.query_one(Viewer).format_document()
+
+    def action_preview_browser(self) -> None:
+        """Open the live HTML preview in the browser."""
+        self.on_omnibox_preview_browser_command()
+
+    def action_toggle_typeset(self) -> None:
+        """Toggle the typeset preview (``Alt+P``)."""
+        self.query_one(Viewer).toggle_typeset()
 
     def action_toggle_split(self) -> None:
         """Toggle split view (``Ctrl+Backslash``)."""

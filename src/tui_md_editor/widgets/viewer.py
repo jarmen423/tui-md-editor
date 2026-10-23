@@ -36,6 +36,7 @@ from typing_extensions import Final
 from .. import __version__
 from ..dialogs import ErrorDialog, FindDialog, InputDialog
 from ..utility.advertising import APPLICATION_TITLE, USER_AGENT
+from .typeset_preview import HAS_TERMINAL_GRAPHICS, TYPESET_AVAILABLE, TypesetPreview
 from ..utility.type_tests import is_text_file, language_for_path, maybe_markdown
 
 def _welcome_text() -> str:
@@ -59,6 +60,8 @@ def _welcome_text() -> str:
         "| `Ctrl+G` | Go to line |",
         "| `Ctrl+N` | New file |",
         "| `Ctrl+\\` | Split view |",
+        "| `Ctrl+P` | Live HTML preview in browser |",
+        "| `Alt+P` | Typeset preview in the terminal |",
         "| `F1` | Help |",
         "",
     ]
@@ -338,6 +341,12 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
         border: none;
         padding: 0 1;
     }
+
+    Viewer #split_typeset {
+        width: 50%;
+        height: 100%;
+        display: none;
+    }
     """
 
     BINDINGS = [
@@ -362,6 +371,9 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
 
     split_mode: var[bool] = var(False)
     """Is the widget in split view (editor + preview side-by-side)?"""
+
+    typeset: var[bool] = var(False)
+    """Show the typeset (terminal graphics) preview instead of text?"""
 
     class ViewerMessage(Message):
         """Base class for viewer messages."""
@@ -405,6 +417,7 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
                     front_matter.front_matter_plugin
                 ),
             )
+            yield TypesetPreview(id="typeset")
             yield IndentingTextArea(id="editor", language="markdown")
             from textual.containers import Horizontal
             with Horizontal(id="split"):
@@ -416,6 +429,7 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
                         front_matter.front_matter_plugin
                     ),
                 )
+                yield TypesetPreview(id="split_typeset")
 
     @property
     def document(self) -> Markdown:
@@ -436,6 +450,11 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
     def split_markdown(self) -> Markdown:
         """The markdown widget in split view."""
         return self.query_one("#split_markdown", Markdown)
+
+    @property
+    def preview_view(self) -> str:
+        """ID of the switcher view used for previewing."""
+        return "typeset" if self.typeset else "markdown"
 
     @property
     def switcher(self) -> ContentSwitcher:
@@ -520,6 +539,7 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
         # Force the VerticalScroll to recalculate its scroll region now
         # that the Markdown widget has fully rendered its content.
         self.refresh(layout=True)
+        self._sync_typeset()
 
     @work(exclusive=True)
     async def _local_load(self, location: Path, remember: bool = True) -> None:
@@ -648,6 +668,7 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
         self.editor.is_markdown_file = True
         self.document.update(content)
         self.scroll_home(animate=False)
+        self._sync_typeset()
 
     def new_file(self) -> None:
         """Open a new untitled buffer."""
@@ -664,6 +685,7 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
         self.document.update(_welcome_text())
         self.scroll_home(animate=False)
         self.post_message(self.LocationChanged(self))
+        self._sync_typeset()
 
     def toggle_edit(self) -> None:
         """Toggle between Markdown preview and TextArea edit mode.
@@ -689,9 +711,10 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
             # Switching from edit back to preview: refresh Markdown
             self.document.update(self.editor.text)
             self.switcher.styles.height = "auto"
-            self.switcher.current = "markdown"
+            self.switcher.current = self.preview_view
             self.edit_mode = False
             self.document.focus()
+            self._sync_typeset()
             # Ensure the VerticalScroll recalculates now that the Markdown
             # widget is visible again with its full content height.
             self.refresh(layout=True)
@@ -722,9 +745,10 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
             self.edit_mode = False
             self.split_mode = False
             self.switcher.styles.height = "auto"
-            self.switcher.current = "markdown"
+            self.switcher.current = self.preview_view
             self.document.update(self.editor.text)
             self.document.focus()
+            self._sync_typeset()
             self.refresh(layout=True)
         else:
             # Entering split mode: sync split editor and show it
@@ -737,8 +761,48 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
             self.switcher.styles.height = "100%"
             self.switcher.current = "split"
             self.split_editor.focus()
+            self._sync_typeset()
 
         self.post_message(self.EditModeChanged(self))
+
+    def toggle_typeset(self) -> None:
+        """Switch the preview between text and typeset graphics."""
+        if not TYPESET_AVAILABLE:
+            self.app.notify(
+                "The typeset preview needs Python 3.12+ with typst and textual-image.",
+                severity="warning",
+            )
+            return
+        self.typeset = not self.typeset
+        if self.typeset and not HAS_TERMINAL_GRAPHICS:
+            self.app.notify(
+                "This terminal didn't report Sixel or kitty graphics support, "
+                "so the typeset preview is drawn at low resolution.",
+                severity="warning",
+                timeout=5,
+            )
+        self.split_markdown.display = not self.typeset
+        self.query_one("#split_typeset", TypesetPreview).display = self.typeset
+        if not self.edit_mode and not self.split_mode:
+            self.switcher.current = self.preview_view
+        self._sync_typeset()
+
+    def _sync_typeset(self) -> None:
+        """Send the current text to whichever typeset preview is showing."""
+        if not self.typeset or (self.edit_mode and not self.split_mode):
+            return
+        if self.split_mode:
+            preview = self.query_one("#split_typeset", TypesetPreview)
+            text = self.split_editor.text
+        else:
+            preview = self.query_one("#typeset", TypesetPreview)
+            text = self.editor.text
+            if not text and not self.viewing_location and self._new_file_path is None:
+                text = _welcome_text()
+        location = self.location if self.location is not None else self._new_file_path
+        base_dir = location.parent if isinstance(location, Path) else None
+        language = (self.editor.language or "text") if self.is_plain_text else None
+        preview.set_source(text, base_dir, language)
 
     def save_file(self) -> None:
         """Save the current editor buffer back to disk.
@@ -818,6 +882,7 @@ class Viewer(VerticalScroll, can_focus=True, can_focus_children=True):
             self._is_dirty = True
         if self.split_mode:
             self.split_markdown.update(self.split_editor.text)
+            self._sync_typeset()
         self.post_message(self.CursorMoved(self))
         self.post_message(self.ContentChanged(self))
 

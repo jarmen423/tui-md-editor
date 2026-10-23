@@ -22,6 +22,19 @@ Welcome to {APPLICATION_TITLE} Help!
 {APPLICATION_TITLE} was built with [Textual](https://github.com/Textualize/textual).
 
 
+## Preview keys
+
+| Key | Command |
+| -- | -- |
+| `Alt+p` | Toggle the typeset preview: the document typeset with real fonts, drawn in the terminal with Sixel / kitty graphics |
+| `Ctrl+p` | Open the live HTML preview in your browser |
+| `Ctrl+e` | Toggle edit / preview mode |
+| `Ctrl+\\` | Toggle split view (editor + live preview) |
+
+The typeset preview also replaces the preview pane in split view, updating as
+you type. It's an image, so text in it can't be selected or searched; press
+`Alt+p` again to switch back to the text preview.
+
 ## Navigation keys
 
 | Key | Command |
@@ -51,12 +64,10 @@ Welcome to {APPLICATION_TITLE} Help!
 
 | Key | Command |
 | -- | -- |
-| `Ctrl+e` | Toggle edit / preview mode |
 | `Ctrl+s` | Save the current file |
 | `Ctrl+f` | Find text in the editor |
 | `Ctrl+g` | Go to line number |
 | `Alt+z` | Toggle word wrap |
-| `Ctrl+\` | Toggle split view (editor + preview) |
 | `Ctrl+b` | **Bold** selection (edit mode, markdown files) |
 | `Ctrl+i` | *Italic* selection (edit mode, markdown files) |
 | `Ctrl+k` | `Code` selection (edit mode, markdown files) |
